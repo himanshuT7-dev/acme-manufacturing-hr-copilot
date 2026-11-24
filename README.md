@@ -1,41 +1,107 @@
 # Acme Manufacturing HR Copilot
 
-An enterprise-grade, full-stack HR Assistant and Self-Service Portal tailored for manufacturing operations. The platform integrates a **Node.js + Express + SQLite** backend, a **React + Vite** Swiss-industrial frontend, and an official **Model Context Protocol (MCP)** TypeScript server. It features strict Role-Based Access Control (RBAC), Policy Retrieval-Augmented Generation (RAG) with exact section citations, Human-in-the-Loop leave confirmations, and an automated evaluation suite achieving a 100% pass rate.
+An enterprise-grade, full-stack HR Assistant and Self-Service Portal tailored for manufacturing operations. The platform integrates a **Node.js + Express + SQLite** backend, a **React + Vite** Swiss-industrial frontend, and an official **Model Context Protocol (MCP)** TypeScript server. It features strict Role-Based Access Control (RBAC), Policy Retrieval-Augmented Generation (RAG) with exact section citations, Human-in-the-Loop leave confirmations, and an automated evaluation suite achieving a 100% pass rate across all brief scenarios.
 
 ---
 
 ## Architecture Overview
 
-```mermaid
-graph TD
-    subgraph Frontend ["Frontend (React + Vite)"]
-        UI["Swiss-Industrial UI<br/>Persona Switcher & Chat"]
-    end
+```text
++-----------------------------------------------------------------------------------+
+|                           ACME MANUFACTURING HR COPILOT                           |
++-----------------------------------------------------------------------------------+
 
-    subgraph Backend ["Backend API (Node.js + Express)"]
-        AUTH["JWT Auth & RBAC<br/>(employee vs hr_admin)"]
-        COPILOT["Copilot Orchestrator<br/>(Gemini / Offline RAG)"]
-        RAG["TF-IDF Policy Store<br/>(docs/policies/*.md)"]
-        HR_SVC["HR Service & Deduction Engine"]
-        DB[(SQLite HRMS Database<br/>backend/data/hrms.sqlite)]
-    end
-
-    subgraph MCP ["MCP Server (@modelcontextprotocol/sdk)"]
-        STDIO["Stdio JSON-RPC Server"]
-        TOOLS["Tools: get_leave_balance<br/>get_attendance_summary<br/>search_company_policies"]
-        RES["Resources:<br/>policy://leave-policy<br/>policy://attendance-policy<br/>policy://wfh-policy"]
-    end
-
-    UI -->|REST + Bearer JWT| AUTH
-    AUTH --> HR_SVC
-    AUTH --> COPILOT
-    COPILOT --> RAG
-    COPILOT --> HR_SVC
-    HR_SVC --> DB
-    STDIO --> TOOLS
-    STDIO --> RES
-    TOOLS --> HR_SVC
+     +-------------------------------------------------------------+
+     |                  FRONTEND (React 18 + Vite)                 |
+     |  - Swiss-Industrial UI with Persona Switcher (E001-E006)    |
+     |  - Real-time Copilot Chat Feed with Interactive Confirmation|
+     |  - Attendance Timesheet & Leave Balance Dashboard           |
+     +------------------------------+------------------------------+
+                                    |
+                                    | REST (Bearer JWT Auth)
+                                    v
+     +-------------------------------------------------------------+
+     |               BACKEND API (Node.js + Express)               |
+     |                                                             |
+     |  +--------------------+         +------------------------+  |
+     |  | Express Routers    |         | Copilot Orchestrator   |  |
+     |  | - /api/auth/login  |         | - Intent Classification|  |
+     |  | - /api/me/*        |-------->| - Tool-Calling Loop    |  |
+     |  | - /api/chat        |         | - Deterministic Router |  |
+     |  | - /api/employees/* |         | - Groq / Gemini LLM    |  |
+     |  +---------+----------+         +-----------+------------+  |
+     |            |                                |               |
+     |            +----------------+---------------+               |
+     |                             |                               |
+     |                             v                               |
+     |  +-------------------------------------------------------+  |
+     |  |                 SHARED HR SERVICE LAYER               |  |
+     |  |  - Code-Enforced RBAC Guard (Throws 403 on Peers)     |  |
+     |  |  - Attendance Penalty Engine (Grace, Late, Overtime)  |  |
+     |  |  - Leave Validation & Deduction Engine                |  |
+     |  +-------------+----------------------------+------------+  |
+     |                |                            |               |
+     +----------------|----------------------------|---------------+
+                      |                            |
+                      v                            v
+     +--------------------------------+   +----------------------------------+
+     |   SQLITE HRMS DATABASE         |   |    MARKDOWN RAG STORE            |
+     |   (backend/data/hrms.sqlite)   |   |    (docs/policies/*.md)          |
+     |  - employees (E001-E006)       |   |   - Section-level Chunking       |
+     |  - leave_balances (CL, SL, EL) |   |   - TF-IDF + Keyword Search      |
+     |  - leave_requests              |   |   - Exact (Policy, Section N)    |
+     |  - attendance (Punches, Shifts)|   |     Citations                    |
+     +--------------------------------+   +----------------------------------+
+                      ^                            ^
+                      |                            |
+     +----------------+----------------------------+---------------+
+     |              MCP SERVER (@modelcontextprotocol/sdk)         |
+     |  - Stdio JSON-RPC Protocol Transport                        |
+     |  - Tools: get_leave_balance, get_attendance_summary,        |
+     |           search_company_policies                           |
+     |  - Resources: policy://leave-policy,                        |
+     |               policy://attendance-policy,                   |
+     |               policy://wfh-policy                           |
+     +-------------------------------------------------------------+
 ```
+
+---
+
+## Core System Architectural Explanations
+
+### 1. The Tool-Calling Loop
+The Copilot operates a resilient two-tier orchestration loop:
+- **Remote LLM with Function Calling**: Integrates with Groq (`openai/gpt-oss-120b`, `qwen/qwen3.8-27b`) or Google Gemini via standard OpenAI-compatible tool definitions (`get_leave_balance`, `get_attendance_summary`, `apply_leave`, `search_policy`). Tool invocations are captured, executed through the shared HR service layer, and passed back in a second turn for conversational synthesis.
+- **Deterministic Offline Fallback**: If `LLM_API_KEY` is omitted or if remote rate limits (HTTP 429) occur, the engine instantly transitions to a deterministic rule-based router that executes the exact tool calls, calculates penalty deductions, and generates verified citations with 0% downtime and zero token cost.
+
+### 2. Code-Enforced RBAC Checks
+Security and data confidentiality are enforced in application code, never delegated solely to LLM prompt instructions:
+- **Defense in Depth**: Every HR service method (`getLeaveBalance`, `getAttendanceSummary`) accepts the authenticated user's JWT payload and explicitly compares `requestingUser.role` and `requestingUser.employee_id` against the target employee ID.
+- **Strict 403 Forbidden**: Standard employees (`employee`) querying any other employee ID receive an HTTP 403 exception immediately. Only authenticated users with role `hr_admin` (e.g., Fatima Shaikh E005) are permitted to inspect peer records.
+
+### 3. Human-in-the-Loop (HITL) Leave Confirmation
+To prevent accidental or unauthorized database state modifications, leave applications follow a strict **Hold -> Confirm** pattern:
+- **Step 1 (Hold)**: When a leave request is initiated via chat or the `apply_leave` tool, the system validates the dates, verifies sufficient balance (CL, SL, EL), and returns a structured `pending_confirmation` object:
+  ```json
+  {
+    "action": "apply_leave",
+    "summary": "1 day(s) of Casual Leave (CL) from 2026-11-10 to 2026-11-10",
+    "payload": {
+      "leave_type": "CL",
+      "from_date": "2026-11-10",
+      "to_date": "2026-11-10",
+      "reason": "Personal work"
+    }
+  }
+  ```
+- **Step 2 (Verify)**: No database write occurs during Step 1. The UI renders an interactive confirmation card requiring an explicit click or affirmative follow-up message ("Yes, submit it").
+- **Step 3 (Commit)**: Only upon receipt of the signed confirmation payload does the backend commit the row into SQLite with status `pending`.
+
+### 4. Section-Aware RAG Chunking
+Instead of arbitrary token window slicing that splits clauses and destroys context, the policy knowledge base utilizes **Markdown Section-Level Chunking**:
+- **Structured Parsing**: `policyStore.js` parses documents (`leave_policy.md`, `attendance_policy.md`, `wfh_policy.md`) on `## Section N:` boundaries.
+- **Granular Context**: Each chunk preserves the document name, exact section number, section title, and verbatim policy text.
+- **Verifiable Citations**: Search queries match against section embeddings and BM25/TF-IDF token scores, guaranteeing exact policy citations in the standardized format: `(Leave Policy, section 1)`, `(Attendance Policy, section 2)`, or `(WFH Policy, section 1)`.
 
 ---
 
@@ -76,32 +142,29 @@ iceipts_assignment/
 
 ---
 
-## Quick Start Guide
+## Quick Start Guide (< 5 Minutes)
 
 ### 1. Prerequisites
-- **Node.js**: v18.0.0 or higher
-- **npm**: v9.0.0 or higher
+- **Node.js**: `v18.0.0` or higher (`node -v`)
+- **npm**: `v9.0.0` or higher (`npm -v`)
 
-### 2. Setup & Installation
-Install all dependencies, seed the SQLite database, and build the frontend with a single command from the root directory:
+### 2. Single-Command Setup
+Install all dependencies across backend, frontend, and MCP server, initialize the SQLite database, and build the frontend:
 
 ```bash
 npm run setup
 ```
 
-Alternatively, run each step manually:
-```bash
-npm run install:all
-npm run seed
-npm run build
-```
+*(Alternatively, run sequentially: `npm run install:all && npm run seed && npm run build`)*
 
 ### 3. Environment Configuration
-Copy `.env.example` to `.env` in the root (and in `backend/` if running standalone):
+Copy `.env.example` to `.env`:
+
 ```bash
 cp .env.example .env
 ```
-Default configuration:
+
+Default contents:
 ```env
 PORT=4000
 JWT_SECRET=change_me_in_production
@@ -109,33 +172,56 @@ LLM_PROVIDER=gemini
 LLM_API_KEY=
 DATABASE_URL=./backend/data/hrms.sqlite
 ```
-> [!NOTE]
-> The copilot operates fully deterministically offline when `LLM_API_KEY` is blank, using local TF-IDF semantic search and rule-based tool orchestration. If a Gemini API key is provided, remote tool-calling and response synthesis are enabled automatically.
 
-### 4. Running the Applications
+> [!TIP]
+> The copilot operates fully deterministically offline out-of-the-box when `LLM_API_KEY` is left blank. To connect remote LLM capabilities, paste a valid Groq API key (`gsk_...`) or Google Gemini API key into `LLM_API_KEY`.
 
-#### Development Mode (Both Frontend + Backend)
+### 4. Run Development Servers
+Start both backend (`http://localhost:4000`) and frontend (`http://localhost:5173`) concurrently with one command:
+
 ```bash
 npm run dev
 ```
-- **Backend API**: `http://localhost:4000`
-- **Frontend UI**: `http://localhost:5173`
 
-#### Backend Alone
+---
+
+## Automated Evaluation Suite Results
+
+The automated evaluation suite tests all 10 core scenarios specified in the assignment brief, plus an additional guardrail verification for prompt injection defense.
+
+To execute the test suite:
 ```bash
-npm run dev:backend
+npm run eval
 ```
 
-#### Frontend Alone
-```bash
-npm run dev:frontend
+### Test Results Matrix (100% Pass Rate)
+
+| # | Status | Test Scenario | User Persona | Tool Expected | Result & Verification Details |
+| :---: | :---: | :--- | :--- | :--- | :--- |
+| **1** | ✔ PASS | Employee Own Leave Balance | E001 (Priya Nair) | `get_leave_balance` | Balances verified: 5 CL, 5 SL, 11 EL remaining; identified 1 pending CL request (`LR001`). |
+| **2** | ✔ PASS | Arjun: Missed Punch & Overtime | E004 (Arjun Rao) | `get_attendance_summary` | Accurately reported missed check-out on Oct 21 and 1h 30m overtime on Oct 22 (10.5h worked). |
+| **3** | ✔ PASS | RBAC: Non-admin Denied Other's Leaves | E001 (employee) | `get_leave_balance` | Access strictly denied with HTTP 403 authorization rule enforced at service layer. |
+| **4** | ✔ PASS | RBAC: Non-admin Denied Other's Attendance | E001 (employee) | `get_attendance_summary` | Access strictly denied with HTTP 403 authorization rule enforced at service layer. |
+| **5** | ✔ PASS | HR Admin Access to Peer Attendance | E005 (hr_admin) | `get_attendance_summary` | HR Admin successfully authorized to view E002 (Rahul) attendance summary & late marks. |
+| **6** | ✔ PASS | Policy Q&A: Vikram WFH on Probation | E006 (Probation) | `search_policy` | Correctly cited `(WFH Policy, section 1)` and confirmed probationary employees are ineligible. |
+| **7** | ✔ PASS | Policy Q&A: Sneha WFH Eligibility & Limit | E003 (Accounts) | `search_policy` | Confirmed Accounts department eligible for up to 4 WFH days/month with section citation. |
+| **8** | ✔ PASS | Rahul: 3 Late Marks & Pay Deduction | E002 (Rahul Mehta) | `get_attendance_summary` | Reported 3 late marks in Oct 2026; confirmed 0.5 day pay deduction applied due to 0 CL left. |
+| **9** | ✔ PASS | Guardrails: Uncovered Policy Topic | E003 (Sneha) | `search_policy` | Explicitly stated that Maternity Leave is not covered in company policies. |
+| **10**| ✔ PASS | Human-in-the-Loop Leave Flow | E001 (Priya) | `apply_leave` | Hold -> Confirm flow succeeded. Request held; inserted into DB with status `pending` after confirmation. |
+| **11**| ✔ PASS | Guardrails: Prompt Injection Defense | E001 (Priya) | `none` | Intercepted override attempt; upheld system safety guidelines and policy constraints. |
+
+```text
+========================================================================================================
+✔ ALL 11 SCENARIOS PASSED
+Evaluation suite completed with 100% pass rate.
+========================================================================================================
 ```
 
 ---
 
 ## Employee Persona Matrix & Test Credentials
 
-All 6 test employees use password: `Test@123`
+All 6 test employees use the default password: `Test@123`
 
 | Employee ID | Name | Email | Role | Department | Shift Start | On Probation? | Leave Balances (Entitled / Remaining) |
 | :--- | :--- | :--- | :--- | :--- | :---: | :---: | :--- |
@@ -146,12 +232,9 @@ All 6 test employees use password: `Test@123`
 | **E005** | Fatima Shaikh | `fatima@acme.test` | `hr_admin` | HR | 09:30 | No | CL 8/7, SL 6/6, EL 15/13 (Admin audit) |
 | **E006** | Vikram Joshi | `vikram@acme.test` | `employee` | Sales | 09:00 | **Yes** | CL 8/4, SL 6/6, EL 0/0 (WFH & EL ineligible) |
 
-> [!IMPORTANT]
-> **Role Normalization**: In accordance with the contract specification, employee `E005`'s role in raw CSV inputs (`"hr admin"`) is strictly normalized to `"hr_admin"` during database seeding and authentication.
-
 ---
 
-## Policy Rules & Business Logic
+## Company Policies & Exact Rules Reference
 
 ### Leave Policy ([docs/policies/leave_policy.md](file:///Users/vcom/Documents/iceipts_assignment/docs/policies/leave_policy.md))
 - **Section 1 (Entitlements)**: 8 Casual Leave (CL), 6 Sick Leave (SL), 15 Earned Leave (EL) per calendar year. Employees on probation receive CL and SL only (0 EL).
@@ -159,7 +242,7 @@ All 6 test employees use password: `Test@123`
 - **Section 3 (Carry Forward)**: EL carries forward up to 30 days. Unused CL and SL lapse on 31 December.
 - **Section 4 (Encashment)**: EL above 30 days is en-cashed at year-end at the basic daily rate.
 - **Section 5 (Medical Certificate)**: SL $>$ 2 consecutive days requires a registered medical certificate submitted within 3 days of returning.
-- **Section 6 (Sandwich Rule)**: Leave taken on both Friday and the following Monday counts Saturday and Sunday as leaves.
+- **Section 6 (Sandwich Rule)**: Leave taken on both Friday and following Monday counts the intervening Saturday and Sunday as leave.
 
 ### Attendance Policy ([docs/policies/attendance_policy.md](file:///Users/vcom/Documents/iceipts_assignment/docs/policies/attendance_policy.md))
 - **Section 1 (Shift & Grace Time)**: Check-ins up to 15 minutes past `shift_start` are marked on-time (`present`).
@@ -176,43 +259,9 @@ All 6 test employees use password: `Test@123`
 
 ---
 
-## Automated Evaluation Suite
-
-The evaluation suite validates the 10 core scenarios from the assignment brief plus prompt injection defense.
-
-### Run Evaluation
-```bash
-npm run eval
-```
-
-### Evaluation Scenarios & Pass Criteria
-
-```text
-========================================================================================================
- #  | Status | Scenario Name                              | User           | Tool Expected    | Result Details
---------------------------------------------------------------------------------------------------------
- 1 | ✔ PASS | Employee Own Leave Balance (Priya)         | E001 (Priya)   | get_leave_balanc | Balances returned: 5 CL, 5 SL, 11 EL (Pending noted)
- 2 | ✔ PASS | Arjun: Missed Punch Oct 21 & Overtime Oct  | E004 (Arjun)   | get_attendance_s | Accurately reported missed punch on Oct 21 & 1h 30m overtime
- 3 | ✔ PASS | RBAC: Non-admin Denied Another Leave Balan | E001 (employee | get_leave_balanc | Access denied with 403 authorization rule enforced
- 4 | ✔ PASS | RBAC: Non-admin Denied Another Attendance  | E001 (employee | get_attendance_s | Access denied with 403 authorization rule enforced
- 5 | ✔ PASS | HR Admin Access to Other Employee Attendan | E005 (hr_admin | get_attendance_s | HR Admin successfully authorized to view summary
- 6 | ✔ PASS | Policy Q&A: Vikram Ineligible for WFH on P | E006 (Probatio | search_policy    | Correctly cited (WFH Policy, section 1) and confirmed ineligibility
- 7 | ✔ PASS | Policy Q&A: Sneha WFH Eligibility & Limit  | E003 (Accounts | search_policy    | Confirmed Accounts eligible for up to 4 WFH days/month
- 8 | ✔ PASS | Rahul: 3 Late Marks & 0.5 Day Pay Deductio | E002 (Rahul)   | get_attendance_s | Reported 3 late marks and 0.5 day pay deduction (0 CL left)
- 9 | ✔ PASS | Guardrails: Uncovered Policy Topic (Matern | E003 (Sneha)   | search_policy    | Explicitly stated maternity leave is not covered
- 10| ✔ PASS | Human-in-the-Loop: Leave Application & Con | E001 (Priya)   | apply_leave      | Hold -> Confirm flow succeeded. Inserted with status 'pending'
- 11| ✔ PASS | Guardrails: Prompt Injection Defense       | E001           | none             | Refused override attempt and upheld system boundaries
-========================================================================================================
-
-✔ ALL 11 SCENARIOS PASSED
-Evaluation suite completed with 100% pass rate.
-```
-
----
-
 ## Model Context Protocol (MCP) Server
 
-The MCP server is built using `@modelcontextprotocol/sdk` and runs over standard I/O (`stdio`).
+The MCP server is built using the official `@modelcontextprotocol/sdk` over standard input/output (`stdio`).
 
 ### Exposed Tools
 1. `get_leave_balance`: Returns remaining CL, SL, EL and pending requests. Non-admin can only query self.
@@ -243,3 +292,33 @@ All protected routes require an `Authorization: Bearer <jwt_token>` header.
   - `confirmed: true`: Commits request with status `pending`.
 - `GET /api/employees/:id/attendance-summary?from=YYYY-MM-DD&to=YYYY-MM-DD`: Restricted to `hr_admin` (returns `403 Forbidden` for standard employees).
 - `POST /api/chat`: `{ message, confirmation_payload? }` -> `{ reply, tools_used, citations, pending_confirmation }`
+
+---
+
+## Libraries Used & Rationale
+
+| Package | Workspace | Rationale |
+| :--- | :--- | :--- |
+| **`express`** | Backend | Industry standard, lightweight HTTP router for predictable REST endpoint implementation. |
+| **`better-sqlite3`** | Backend / MCP | High-performance synchronous SQLite driver providing ACID compliance and zero external service overhead. |
+| **`jsonwebtoken`** | Backend | Stateless JWT tokens containing user identity, role, and department for RBAC enforcement. |
+| **`bcryptjs`** | Backend | Secure salted password hashing for authenticated user verification. |
+| **`@modelcontextprotocol/sdk`** | MCP Server | Official Anthropic Model Context Protocol TypeScript/Node SDK ensuring complete JSON-RPC 2.0 stdio compliance. |
+| **`react` + `vite`** | Frontend | Lightning-fast HMR and build times with a component-driven Swiss-industrial UI. |
+| **`lucide-react`** | Frontend | Clean, consistent SVG icons for personas, attendance badges, and audit statuses. |
+| **`concurrently`** | Root Monorepo | Enables unified one-command local execution (`npm run dev`) across backend and frontend. |
+
+---
+
+## Documented Assumptions
+
+1. **Role Normalization (`"hr admin"` -> `"hr_admin"`)**:
+   In the assignment brief CSV, Fatima Shaikh (`E005`) has the role `"hr admin"` with a space. To ensure clean programmatic RBAC checks without fragile string comparisons, this is normalized during database seeding and JWT generation to `"hr_admin"`.
+2. **Typo Correction in Seed CSV (`LR003`)**:
+   Row `LR003` in the brief CSV referenced employee ID `2004`. Given that employee IDs follow the `E001`–`E006` format and Arjun Rao is `E004`, this was corrected to `E004` to maintain foreign key integrity.
+3. **Reference Calendar Anchor**:
+   The brief queries "last week's attendance" for October 2026. The reference timeframe is anchored to Monday, October 19, 2026 through Friday, October 23, 2026.
+4. **Late Mark Penalty for Rahul Mehta (`E002`)**:
+   Per Attendance Policy Section 2, every 3 late marks in a month deduct 0.5 day Casual Leave (CL). Because Rahul has 0 CL remaining (8 used of 8 entitled), the system applies a **0.5 day pay deduction** (salary deduction).
+5. **Overtime & Missed Punch for Arjun Rao (`E004`)**:
+   Arjun Rao worked 10.5 hours on October 22, 2026. Because standard shifts are 9 hours per Attendance Policy Section 5, the excess 1.5 hours is categorized as **1h 30m overtime**. His check-out was omitted on October 21, correctly triggering a **missed punch** notification.

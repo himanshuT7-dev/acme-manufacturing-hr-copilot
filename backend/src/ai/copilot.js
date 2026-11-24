@@ -574,6 +574,16 @@ export async function handleChat({ message, user, confirmation_payload = null })
     pendingConfirmation: null
   };
 
+  // 1. Guardrail / Injection Check (Deterministic Layer before LLM)
+  if (isPromptInjection(message)) {
+    return {
+      reply: 'I am the Acme Manufacturing HR Copilot. I must adhere strictly to company HR policies and security guardrails. I cannot disregard previous rules or alter system authorization boundaries.',
+      tools_used: [],
+      citations: [],
+      pending_confirmation: null
+    };
+  }
+
   // If no LLM API key is provided, use deterministic router
   if (!process.env.LLM_API_KEY) {
     return await handleChatDeterministic(message, user, state);
