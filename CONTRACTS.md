@@ -53,10 +53,13 @@ interface User {
 ### 2.2 Leave Balance Model
 ```typescript
 interface LeaveBalance {
-  annual_leave: number;     // e.g. 14
-  sick_leave: number;       // e.g. 8
-  casual_leave: number;     // e.g. 4
-  unpaid_leave?: number;    // optional track
+  cl: number;               // Casual Leave remaining (8 entitled per year)
+  sl: number;               // Sick Leave remaining (6 entitled per year)
+  el: number;               // Earned Leave remaining (15 entitled per year; 0 for probation)
+  // Aliases for compatibility
+  casual_leave?: number;
+  sick_leave?: number;
+  annual_leave?: number;
 }
 ```
 
@@ -78,7 +81,7 @@ interface AttendanceRecord {
 interface LeaveRequest {
   id: number | string;
   employee_id: string;
-  leave_type: "annual" | "sick" | "casual" | "unpaid";
+  leave_type: "CL" | "SL" | "EL" | "casual" | "sick" | "annual" | "unpaid";
   from_date: string;        // "YYYY-MM-DD"
   to_date: string;          // "YYYY-MM-DD"
   days_count: number;

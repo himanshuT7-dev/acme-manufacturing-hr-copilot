@@ -1,7 +1,7 @@
 import db from '../db/index.js';
 import bcrypt from 'bcryptjs';
 
-// Normalize role helper
+// Normalize role helper (e.g. E005 raw role "hr admin" -> "hr_admin")
 export function normalizeRole(role) {
   if (!role) return 'employee';
   const clean = String(role).trim().toLowerCase();
@@ -17,6 +17,14 @@ function timeToMinutes(timeStr) {
   const mins = parts[1] || 0;
   const secs = parts[2] || 0;
   return hours * 60 + mins + secs / 60;
+}
+
+// Convert minutes into "Xh Ym" formatted string
+function minutesToHoursString(totalMins) {
+  const h = Math.floor(totalMins / 60);
+  const m = Math.round(totalMins % 60);
+  if (m === 0) return `${h}h`;
+  return `${h}h ${m}m`;
 }
 
 // Helper to count business days (Mon-Fri) between two dates inclusive
@@ -94,9 +102,22 @@ export function getEmployeeById(employeeId) {
 }
 
 /**
+ * Normalizes leave type input to standard code ('CL', 'SL', 'EL', 'unpaid')
+ */
+export function normalizeLeaveType(type) {
+  if (!type) return null;
+  const t = String(type).trim().toUpperCase();
+  if (t === 'CL' || t === 'CASUAL' || t === 'CASUAL LEAVE') return 'CL';
+  if (t === 'SL' || t === 'SICK' || t === 'SICK LEAVE') return 'SL';
+  if (t === 'EL' || t === 'EARNED' || t === 'EARNED LEAVE' || t === 'ANNUAL' || t === 'ANNUAL LEAVE' || t === 'AL') return 'EL';
+  if (t === 'UNPAID' || t === 'LWP' || t === 'LEAVE WITHOUT PAY') return 'unpaid';
+  return null;
+}
+
+/**
  * 1. getLeaveBalance(user, targetEmployeeId)
- * Enforce in code that if user.role !== 'hr_admin' and targetEmployeeId !== user.employee_id, throw 403 Forbidden.
- * Include pending leave days (such as E001's 1 pending CL on 2026-10-22) alongside remaining balance.
+ * Returns CL, SL, EL balances and pending requests.
+ * Enforces 403 if regular employee attempts to view another employee.
  */
 export function getLeaveBalance(user, targetEmployeeId) {
   const targetId = targetEmployeeId || user.employee_id;
@@ -112,10 +133,15 @@ export function getLeaveBalance(user, targetEmployeeId) {
   const employee = getEmployeeById(targetId);
 
   const balance = db.prepare(`
-    SELECT annual_leave, sick_leave, casual_leave
+    SELECT cl, sl, el, casual_leave, sick_leave, annual_leave,
+           cl_entitled, cl_used, sl_entitled, sl_used, el_entitled, el_used
     FROM leave_balances
     WHERE employee_id = ?
-  `).get(targetId) || { annual_leave: 0, sick_leave: 0, casual_leave: 0 };
+  `).get(targetId) || {
+    cl: 0, sl: 0, el: 0,
+    casual_leave: 0, sick_leave: 0, annual_leave: 0,
+    cl_entitled: 8, cl_used: 0, sl_entitled: 6, sl_used: 0, el_entitled: 15, el_used: 0
+  };
 
   // Fetch pending leave requests for this employee
   const pendingRequests = db.prepare(`
@@ -125,27 +151,41 @@ export function getLeaveBalance(user, targetEmployeeId) {
     ORDER BY from_date ASC
   `).all(targetId);
 
-  let pendingAnnual = 0;
-  let pendingSick = 0;
-  let pendingCasual = 0;
+  let pendingCL = 0;
+  let pendingSL = 0;
+  let pendingEL = 0;
 
   for (const req of pendingRequests) {
-    if (req.leave_type === 'annual') pendingAnnual += req.days_count;
-    else if (req.leave_type === 'sick') pendingSick += req.days_count;
-    else if (req.leave_type === 'casual') pendingCasual += req.days_count;
+    const norm = normalizeLeaveType(req.leave_type);
+    if (norm === 'CL') pendingCL += req.days_count;
+    else if (norm === 'SL') pendingSL += req.days_count;
+    else if (norm === 'EL') pendingEL += req.days_count;
   }
 
-  const pendingTotal = pendingAnnual + pendingSick + pendingCasual;
+  const pendingTotal = pendingCL + pendingSL + pendingEL;
 
   return {
     employee_id: targetId,
-    annual_leave: balance.annual_leave,
-    sick_leave: balance.sick_leave,
-    casual_leave: balance.casual_leave,
+    // Exact short codes from brief
+    cl: balance.cl,
+    sl: balance.sl,
+    el: balance.el,
+    // Aliases for interface compatibility
+    casual_leave: balance.cl,
+    sick_leave: balance.sl,
+    annual_leave: balance.el,
+    entitlements: {
+      cl: { entitled: balance.cl_entitled, used: balance.cl_used, remaining: balance.cl },
+      sl: { entitled: balance.sl_entitled, used: balance.sl_used, remaining: balance.sl },
+      el: { entitled: balance.el_entitled, used: balance.el_used, remaining: balance.el }
+    },
     pending_leaves: {
-      annual: pendingAnnual,
-      sick: pendingSick,
-      casual: pendingCasual,
+      cl: pendingCL,
+      sl: pendingSL,
+      el: pendingEL,
+      casual: pendingCL,
+      sick: pendingSL,
+      annual: pendingEL,
       total: pendingTotal
     },
     pending_requests: pendingRequests
@@ -154,11 +194,12 @@ export function getLeaveBalance(user, targetEmployeeId) {
 
 /**
  * 2. getAttendanceSummary(user, targetEmployeeId, fromDate, toDate)
- * Enforce 403 in code if user.role !== 'hr_admin' and targetEmployeeId !== user.employee_id.
- * Calculate exact hours worked per day, late marks (>15 mins after shift_start), full days (>=8h),
- * half days (4h to <8h), missed punches (empty check_out), overtime (>9h),
- * and cross-reference leave_requests so approved/pending leaves are marked as covered by leave
- * rather than unexcused absences.
+ * Calculates attendance metrics according to Attendance Policy:
+ * - Section 1: 15-minute grace period after shift_start is on time.
+ * - Section 2: Late marks (>15 mins after shift_start); 3 late marks in a month deduct 0.5 day CL, or 0.5 day pay if 0 CL left.
+ * - Section 3: >=8h full day, 4h to <8h half day, <4h unexcused absence.
+ * - Section 4: Missed punch (check-in with no check-out) requires regularisation within 3 days.
+ * - Section 5: >9h on a working day is overtime, needs manager approval.
  */
 export function getAttendanceSummary(user, targetEmployeeId, fromDate, toDate) {
   const targetId = targetEmployeeId || user.employee_id;
@@ -199,6 +240,15 @@ export function getAttendanceSummary(user, targetEmployeeId, fromDate, toDate) {
     attendanceMap.set(log.date, log);
   }
 
+  // Also query month-wide late marks (for calendar month deduction rules)
+  const monthStart = `${effectiveFrom.slice(0, 7)}-01`;
+  const monthEnd = `${effectiveFrom.slice(0, 7)}-31`;
+  const monthLogs = db.prepare(`
+    SELECT date, check_in, check_out, status
+    FROM attendance
+    WHERE employee_id = ? AND date BETWEEN ? AND ?
+  `).all(targetId, monthStart, monthEnd);
+
   // Fetch all leave requests (approved or pending) that cover any part of this window
   const leaveRequests = db.prepare(`
     SELECT id, request_id, leave_type, from_date, to_date, days_count, reason, status
@@ -216,6 +266,7 @@ export function getAttendanceSummary(user, targetEmployeeId, fromDate, toDate) {
   let lateDays = 0;
   let missedPunches = 0;
   let overtimeDays = 0;
+  let overtimeMinutesTotal = 0;
   let leavesTaken = 0;
   let absentDays = 0;
 
@@ -224,7 +275,7 @@ export function getAttendanceSummary(user, targetEmployeeId, fromDate, toDate) {
   for (const date of scheduledDates) {
     const log = attendanceMap.get(date);
 
-    // Check if covered by leave
+    // Check if covered by approved or pending leave
     const leaveCover = leaveRequests.find(lr => date >= lr.from_date && date <= lr.to_date);
 
     let checkIn = log ? log.check_in : null;
@@ -233,13 +284,13 @@ export function getAttendanceSummary(user, targetEmployeeId, fromDate, toDate) {
     let isLate = false;
     let isMissedPunch = false;
     let isOvertime = false;
+    let overtimeDuration = null;
     let isFullDay = false;
     let isHalfDay = false;
     let status = log ? log.status : 'absent';
     let notes = log ? log.notes : null;
 
     if (leaveCover) {
-      // Marked as covered by leave rather than unexcused absence
       leavesTaken++;
       status = 'on_leave';
       if (!notes) {
@@ -249,7 +300,7 @@ export function getAttendanceSummary(user, targetEmployeeId, fromDate, toDate) {
       presentDays++;
       const inMinutes = timeToMinutes(checkIn);
 
-      // Late mark: checked in > 15 minutes after shift_start
+      // Section 1 & 2: Late marks (>15 mins after shift_start)
       if (inMinutes > shiftMinutes + 15) {
         isLate = true;
         lateDays++;
@@ -261,6 +312,7 @@ export function getAttendanceSummary(user, targetEmployeeId, fromDate, toDate) {
         const workedMinutes = Math.max(0, outMinutes - inMinutes);
         hoursWorked = Number((workedMinutes / 60).toFixed(2));
 
+        // Section 3: Working hours
         if (hoursWorked >= 8) {
           isFullDay = true;
           fullDays++;
@@ -271,19 +323,22 @@ export function getAttendanceSummary(user, targetEmployeeId, fromDate, toDate) {
           status = 'half_day';
         }
 
+        // Section 5: Overtime (>9h on a working day)
         if (hoursWorked > 9) {
           isOvertime = true;
           overtimeDays++;
+          const otMins = workedMinutes - (9 * 60);
+          overtimeMinutesTotal += otMins;
+          overtimeDuration = minutesToHoursString(otMins);
         }
       } else {
-        // Empty check-out means missed punch
+        // Section 4: Missed punch (check-in with no check-out)
         isMissedPunch = true;
         missedPunches++;
         status = 'present';
-        if (!notes) notes = 'Missed check-out punch';
+        if (!notes) notes = 'Missed check-out punch (requires regularisation within 3 working days)';
       }
     } else {
-      // No check in and no leave request = unexcused absence
       absentDays++;
       status = 'absent';
       if (!notes) notes = 'Unexcused absence';
@@ -298,6 +353,7 @@ export function getAttendanceSummary(user, targetEmployeeId, fromDate, toDate) {
       is_late: isLate,
       is_missed_punch: isMissedPunch,
       is_overtime: isOvertime,
+      overtime_duration: overtimeDuration,
       is_full_day: isFullDay,
       is_half_day: isHalfDay,
       covered_by_leave: Boolean(leaveCover),
@@ -309,6 +365,37 @@ export function getAttendanceSummary(user, targetEmployeeId, fromDate, toDate) {
       } : null,
       notes
     });
+  }
+
+  // Calculate month-level late marks and penalty deduction (Attendance Policy Section 2)
+  let monthLateMarksCount = 0;
+  for (const mLog of monthLogs) {
+    if (mLog.check_in) {
+      const inM = timeToMinutes(mLog.check_in);
+      if (inM > shiftMinutes + 15) {
+        monthLateMarksCount++;
+      }
+    }
+  }
+
+  // Check current CL balance for deduction type
+  const balanceRow = db.prepare('SELECT cl FROM leave_balances WHERE employee_id = ?').get(targetId);
+  const remainingCL = balanceRow ? balanceRow.cl : 0;
+  const lateDeductionUnits = Math.floor(monthLateMarksCount / 3);
+  let lateDeductionExplanation = null;
+  let lateDeductionType = null;
+  let lateDeductionAmount = 0;
+
+  if (lateDeductionUnits > 0) {
+    lateDeductionAmount = lateDeductionUnits * 0.5;
+    if (remainingCL >= lateDeductionAmount) {
+      lateDeductionType = 'CL';
+      lateDeductionExplanation = `${monthLateMarksCount} late marks in month trigger deduction of ${lateDeductionAmount} day(s) from Casual Leave (CL). (Attendance Policy, Section 2)`;
+    } else {
+      // 0 CL remaining -> 0.5 day pay deduction
+      lateDeductionType = 'pay';
+      lateDeductionExplanation = `${monthLateMarksCount} late marks in month with 0 CL remaining trigger a ${lateDeductionAmount} day pay deduction (salary deduction). (Attendance Policy, Section 2)`;
+    }
   }
 
   const totalScheduledDays = scheduledDates.length;
@@ -335,17 +422,25 @@ export function getAttendanceSummary(user, targetEmployeeId, fromDate, toDate) {
       late_days: lateDays,
       missed_punches: missedPunches,
       overtime_days: overtimeDays,
+      overtime_formatted: minutesToHoursString(overtimeMinutesTotal),
       absent_days: absentDays,
       leaves_taken: leavesTaken,
-      attendance_percentage: attendancePercentage
+      attendance_percentage: attendancePercentage,
+      // Month-level late deduction details
+      month_late_marks: monthLateMarksCount,
+      late_deduction: {
+        units: lateDeductionUnits,
+        type: lateDeductionType,
+        amount: lateDeductionAmount,
+        explanation: lateDeductionExplanation
+      }
     },
     daily_records: dailyRecords
   };
 }
 
 /**
- * Helper for GET /api/me/attendance
- * Retrieves attendance records for an employee within a date range
+ * 3. getAttendanceRecords(user, targetEmployeeId, fromDate, toDate)
  */
 export function getAttendanceRecords(user, targetEmployeeId, fromDate, toDate) {
   const targetId = targetEmployeeId || user.employee_id;
@@ -385,34 +480,25 @@ export function getAttendanceRecords(user, targetEmployeeId, fromDate, toDate) {
 }
 
 /**
- * 3. createLeaveRequest(user, { leave_type, from_date, to_date, reason, confirmed })
- * Validate inputs (400 on invalid dates/types), check probation rules (E006 cannot apply for EL),
- * and only insert into leave_requests with status 'pending' when confirmed === true.
+ * 4. createLeaveRequest(user, params)
+ * Leave rules according to Leave Policy:
+ * - Section 1: 8 CL, 6 SL, 15 EL per calendar year. Probation gets CL and SL only (cannot take EL).
+ * - Section 2: CL >= 1 day advance, max 3 consecutive days; EL >= 7 days advance; SL same day.
+ * - Confirmed === false: dry-run validation check.
+ * - Confirmed === true: insert into leave_requests with status 'pending'.
  */
 export function createLeaveRequest(user, params) {
   const { leave_type, from_date, to_date, reason, confirmed } = params || {};
 
   if (!leave_type) {
-    const err = new Error('Leave type is required (annual, sick, casual, unpaid)');
+    const err = new Error('Leave type is required (CL, SL, EL, or unpaid)');
     err.statusCode = 400;
     throw err;
   }
 
-  // Normalize aliases (e.g., 'EL' -> 'annual', 'SL' -> 'sick', 'CL' -> 'casual')
-  let normalizedType = String(leave_type).toLowerCase().trim();
-  if (normalizedType === 'el' || normalizedType === 'earned' || normalizedType === 'privilege') {
-    normalizedType = 'annual';
-  } else if (normalizedType === 'sl') {
-    normalizedType = 'sick';
-  } else if (normalizedType === 'cl' || normalizedType === 'emergency') {
-    normalizedType = 'casual';
-  } else if (normalizedType === 'lwp') {
-    normalizedType = 'unpaid';
-  }
-
-  const validTypes = ['annual', 'sick', 'casual', 'unpaid'];
-  if (!validTypes.includes(normalizedType)) {
-    const err = new Error(`Invalid leave type "${leave_type}". Must be one of: annual, sick, casual, unpaid`);
+  const normalizedType = normalizeLeaveType(leave_type);
+  if (!normalizedType) {
+    const err = new Error(`Invalid leave type "${leave_type}". Must be one of: CL (Casual), SL (Sick), EL (Earned), or unpaid`);
     err.statusCode = 400;
     throw err;
   }
@@ -433,14 +519,14 @@ export function createLeaveRequest(user, params) {
 
   const employee = getEmployeeById(user.employee_id);
 
-  // Probation rule check: Employees on probation (e.g., E006) cannot apply for EL / annual leave
-  if (employee.on_probation && normalizedType === 'annual') {
-    const err = new Error('Employees on probation are not eligible to apply for Annual Leave (Privilege/Earned Leave) during probation. (Leave Policy, Section 3)');
+  // Leave Policy Section 1: Probation gets CL and SL only. Probation employees cannot take EL.
+  if (employee.on_probation && normalizedType === 'EL') {
+    const err = new Error('Employees on probation are entitled to Casual Leave (CL) and Sick Leave (SL) only and cannot apply for Earned Leave (EL). (Leave Policy, Section 1)');
     err.statusCode = 400;
     throw err;
   }
 
-  // Calculate requested working days
+  // Calculate requested working business days
   const businessDays = getBusinessDaysList(from_date, to_date);
   const daysCount = businessDays.length;
 
@@ -450,33 +536,31 @@ export function createLeaveRequest(user, params) {
     throw err;
   }
 
-  // Policy check for Casual Leave: Max 2 consecutive days
-  if (normalizedType === 'casual' && daysCount > 2) {
-    const err = new Error(`Maximum consecutive casual leave permitted is 2 days. Requested ${daysCount} days. (Leave Policy, Section 2)`);
+  // Leave Policy Section 2: Casual Leave (CL) max 3 consecutive days
+  if (normalizedType === 'CL' && daysCount > 3) {
+    const err = new Error(`A maximum of 3 consecutive days of Casual Leave (CL) can be taken at a time. Requested ${daysCount} days. (Leave Policy, Section 2)`);
     err.statusCode = 400;
     throw err;
   }
 
   // Check balance sufficiency
   const balances = db.prepare(`
-    SELECT annual_leave, sick_leave, casual_leave
-    FROM leave_balances
-    WHERE employee_id = ?
-  `).get(user.employee_id) || { annual_leave: 0, sick_leave: 0, casual_leave: 0 };
+    SELECT cl, sl, el FROM leave_balances WHERE employee_id = ?
+  `).get(user.employee_id) || { cl: 0, sl: 0, el: 0 };
 
   let availableBalance = 0;
-  if (normalizedType === 'annual') availableBalance = balances.annual_leave;
-  else if (normalizedType === 'sick') availableBalance = balances.sick_leave;
-  else if (normalizedType === 'casual') availableBalance = balances.casual_leave;
-  else if (normalizedType === 'unpaid') availableBalance = 999; // Unpaid leave not bounded by quota
+  if (normalizedType === 'CL') availableBalance = balances.cl;
+  else if (normalizedType === 'SL') availableBalance = balances.sl;
+  else if (normalizedType === 'EL') availableBalance = balances.el;
+  else if (normalizedType === 'unpaid') availableBalance = 999;
 
   if (normalizedType !== 'unpaid' && availableBalance < daysCount) {
-    const err = new Error(`Insufficient ${normalizedType} leave balance. Requested ${daysCount} day(s), available ${availableBalance} day(s).`);
+    const err = new Error(`Insufficient ${normalizedType} balance. Requested ${daysCount} day(s), available ${availableBalance} day(s).`);
     err.statusCode = 400;
     throw err;
   }
 
-  // If confirmed === false (Dry-run validation check)
+  // If confirmed === false: Dry-run check
   if (!confirmed) {
     return {
       success: true,
@@ -496,7 +580,7 @@ export function createLeaveRequest(user, params) {
   }
 
   // If confirmed === true:
-  // Only insert into leave_requests with status 'pending'
+  // Insert into leave_requests with status 'pending'
   const countRow = db.prepare('SELECT COUNT(*) as count FROM leave_requests').get();
   const nextIdNum = (countRow ? countRow.count : 0) + 1;
   const requestId = `LR${String(nextIdNum).padStart(3, '0')}`;
@@ -533,9 +617,12 @@ export function createLeaveRequest(user, params) {
       created_at: createdAt
     },
     remaining_balance: {
-      annual_leave: balances.annual_leave,
-      sick_leave: balances.sick_leave,
-      casual_leave: balances.casual_leave
+      cl: balances.cl,
+      sl: balances.sl,
+      el: balances.el,
+      casual_leave: balances.cl,
+      sick_leave: balances.sl,
+      annual_leave: balances.el
     }
   };
 }

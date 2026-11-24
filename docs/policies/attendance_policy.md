@@ -1,27 +1,24 @@
-# Acme Manufacturing - Attendance & Punctuality Policy
+# Acme Manufacturing - Attendance Policy
 
-## Section 1: Working Hours and Shift Timing
-- Acme Manufacturing operates on structured shifts to ensure uninterrupted manufacturing and assembly line throughput.
-- Standard employee shift start times are designated in employee profiles (`shift_start`, e.g., 08:00 AM, 09:00 AM, or 02:00 PM).
-- Standard working hours comprise 8 operational hours plus a 60-minute lunch/rest break per full workday.
+## Section 1: Shift Timings and Grace Time
+- Every employee has an assigned shift start time (`shift_start`, e.g., 09:00, 09:30, or 10:00).
+- A grace period of 15 minutes is allowed after `shift_start`. Any check-in up to 15 minutes past the scheduled `shift_start` is considered on time and marked as present.
 
-## Section 2: Punctuality, Grace Period, and Late Check-In
-- **Punctuality Expectation**: All employees are expected to check in at their assigned station or biometric terminal at or before their designated `shift_start`.
-- **Grace Period**: A grace window of 15 minutes is permitted. Check-ins up to 15 minutes past `shift_start` are marked as `present`.
-- **Late Arrivals**: Check-ins arriving between 16 and 60 minutes after `shift_start` are designated as `late`. Three instances of `late` within a single calendar month result in deduction of a half-day casual leave.
+## Section 2: Late Marks and Deductions
+- Any check-in more than 15 minutes after `shift_start` is counted as a late mark.
+- For every 3 late marks accumulated in a calendar month, 0.5 day of Casual Leave (CL) will be deducted.
+- If the employee has 0 CL remaining, a 0.5 day pay deduction (salary deduction) will be applied instead.
 
-## Section 3: Half-Day Attendance Thresholds
-- Arrival between 61 minutes and 4 hours after `shift_start`, or departure more than 2 hours prior to scheduled shift end with supervisor approval, is logged as `half_day`.
-- Arriving more than 4 hours after shift start without advance authorization is recorded as an unexcused absence (`absent`).
+## Section 3: Working Hours and Attendance Marking
+- **Full Day**: Total working hours of 8 hours or more (>= 8h) constitutes a full working day.
+- **Half Day**: Total working hours between 4 hours and less than 8 hours (4h to < 8h) is treated as a half day.
+- **Absence**: Working less than 4 hours (< 4h) or no punch at all without prior approved or pending leave is treated as an unexcused absence.
 
-## Section 4: Unexcused Absence and Disciplinary Escalation
-- Any absence without prior notice or leave request submission by 10:00 AM of the absence date is marked as unexcused (`absent`).
-- Three consecutive unexcused absences trigger a mandatory HR inquiry and formal written notice.
+## Section 4: Missed Punch Regularisation
+- A check-in with no corresponding check-out punch must be regularised through HR within 3 working days.
+- If not regularised within 3 working days, the day will be marked as a half day.
+- An employee is permitted a maximum of 3 missed punch regularisations per calendar month.
 
-## Section 5: Overtime and Shift Regularization
-- Non-exempt plant operators and technicians working beyond 8 hours on a scheduled shift qualify for overtime calculation, subject to supervisor pre-approval.
-- Missed biometric or check-in scans must be submitted for regularization within 48 hours accompanied by manager endorsement.
-
-## Section 6: HR Admin Audit and Attendance Summaries
-- HR Administrators possess full audit privileges to review employee attendance summaries across departments via the HR portal and administrative API endpoints (`GET /api/employees/:id/attendance-summary`).
-- Employees hold access strictly to their individual attendance history (`GET /api/me/attendance`).
+## Section 5: Overtime Policy
+- Working more than 9 hours (> 9h) on any working day qualifies as overtime.
+- Overtime requires prior manager approval in order to be compensated or paid out.

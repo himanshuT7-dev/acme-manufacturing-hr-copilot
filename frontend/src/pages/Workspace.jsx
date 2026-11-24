@@ -6,16 +6,16 @@ export const TEST_SCENARIOS = [
   {
     id: 'S01',
     category: 'BALANCE',
-    title: 'Own Leave Balance',
+    title: 'Own Leave Balance (Priya)',
     query: 'What is my current leave balance?',
-    hint: 'Returns AL, SL, CL balances and pending notes (E001)'
+    hint: 'Returns 5 CL, 5 SL, 11 EL balances and pending notes (E001)'
   },
   {
     id: 'S02',
     category: 'ATTENDANCE',
-    title: 'Attendance Summary',
+    title: 'Arjun: Missed Punch & Overtime',
     query: 'What was my attendance summary for last week?',
-    hint: 'Returns Oct 19-23 attendance summary for logged-in user'
+    hint: 'Reports Oct 21 missed punch & Oct 22 1h 30m overtime (E004)'
   },
   {
     id: 'S03',
@@ -34,30 +34,30 @@ export const TEST_SCENARIOS = [
   {
     id: 'S05',
     category: 'ADMIN',
-    title: 'HR Admin Audit (E005)',
-    query: "Show me Priya Nair's (E001) attendance summary for last week",
+    title: 'HR Admin Audit (Fatima)',
+    query: "Show me Arjun Rao's (E004) attendance summary for last week",
     hint: 'Allowed for Fatima (E005 HR Admin)'
   },
   {
     id: 'S06',
     category: 'POLICY',
-    title: 'Probation Annual Leave',
-    query: 'Can employees on probation take annual leave?',
-    hint: 'Cites Leave Policy, section 3 & explains 90-day rule'
+    title: 'Vikram: Probation WFH',
+    query: 'Can I work from home while on probation?',
+    hint: 'Cites WFH Policy, section 1 (ineligible on probation)'
   },
   {
     id: 'S07',
     category: 'POLICY',
-    title: 'Plant Floor WFH Rule',
-    query: 'Can plant floor workers work from home according to company policy?',
-    hint: 'Cites WFH Policy & states 100% on-site requirement'
+    title: 'Sneha: Accounts WFH Limit',
+    query: 'Am I eligible to work from home and what is the limit?',
+    hint: 'Cites WFH Policy, section 1 & 2 (Accounts max 4 days/month)'
   },
   {
     id: 'S08',
     category: 'POLICY',
-    title: 'Punctuality Grace Period',
-    query: 'What is the grace period for check-in and when are late marks deducted?',
-    hint: 'Cites Attendance Policy (15m grace, 3 late marks deduction)'
+    title: 'Rahul: 3 Late Marks Deduction',
+    query: 'How many late marks do I have for October and what is the deduction?',
+    hint: 'Cites Attendance Policy, section 2 (3 marks, 0 CL -> 0.5 day pay deduction)'
   },
   {
     id: 'S09',
@@ -70,7 +70,7 @@ export const TEST_SCENARIOS = [
     id: 'S10',
     category: 'HITL',
     title: 'Apply Leave (HITL)',
-    query: 'I need to apply for annual leave from 2026-12-01 to 2026-12-03 for personal reasons.',
+    query: 'I need to apply for casual leave on 2026-11-10 for personal work.',
     hint: 'Triggers interactive confirmation card without DB write until confirmed'
   },
   {
@@ -495,9 +495,9 @@ export default function Workspace({ user, token, onSignOut }) {
                     color: 'var(--ink-primary)'
                   }}
                 >
-                  <span>AL: {leaveBalance?.annual_leave ?? '-'}</span>
-                  <span>SL: {leaveBalance?.sick_leave ?? '-'}</span>
-                  <span>CL: {leaveBalance?.casual_leave ?? '-'}</span>
+                  <span>CL: {leaveBalance?.cl ?? leaveBalance?.casual_leave ?? '-'}</span>
+                  <span>SL: {leaveBalance?.sl ?? leaveBalance?.sick_leave ?? '-'}</span>
+                  <span>EL: {leaveBalance?.el ?? leaveBalance?.annual_leave ?? '-'}</span>
                 </div>
               </div>
             </div>
