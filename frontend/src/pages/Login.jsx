@@ -6,40 +6,40 @@ export const SEEDED_EMPLOYEES = [
     name: 'Priya Nair',
     email: 'priya@acme.test',
     role: 'EMPLOYEE',
-    dept: 'Engineering',
+    dept: 'Production',
     shift: '09:00',
     probation: false,
-    label: 'Priya Nair - E001 (Engineering)'
+    label: 'Priya Nair - E001 (Production, Shift 09:00)'
   },
   {
     id: 'E002',
     name: 'Rahul Mehta',
     email: 'rahul@acme.test',
     role: 'EMPLOYEE',
-    dept: 'Manufacturing',
-    shift: '08:00',
+    dept: 'Production',
+    shift: '09:00',
     probation: false,
-    label: 'Rahul Mehta - E002 (Manufacturing, Shift 08:00)'
+    label: 'Rahul Mehta - E002 (Production, Shift 09:00 - 3 Late)'
   },
   {
     id: 'E003',
     name: 'Sneha Kulkarni',
     email: 'sneha@acme.test',
     role: 'EMPLOYEE',
-    dept: 'Quality',
-    shift: '09:00',
+    dept: 'Accounts',
+    shift: '10:00',
     probation: false,
-    label: 'Sneha Kulkarni - E003 (Quality)'
+    label: 'Sneha Kulkarni - E003 (Accounts, Shift 10:00 - WFH)'
   },
   {
     id: 'E004',
     name: 'Arjun Rao',
     email: 'arjun@acme.test',
     role: 'EMPLOYEE',
-    dept: 'Assembly',
-    shift: '08:00',
+    dept: 'Sales',
+    shift: '09:00',
     probation: false,
-    label: 'Arjun Rao - E004 (Assembly, Shift 08:00)'
+    label: 'Arjun Rao - E004 (Sales, Shift 09:00 - Overtime)'
   },
   {
     id: 'E005',
@@ -47,19 +47,19 @@ export const SEEDED_EMPLOYEES = [
     email: 'fatima@acme.test',
     role: 'HR_ADMIN',
     dept: 'HR',
-    shift: '09:00',
+    shift: '09:30',
     probation: false,
-    label: 'Fatima Shaikh (HR Admin) - E005'
+    label: 'Fatima Shaikh (HR Admin) - E005 (HR, Shift 09:30)'
   },
   {
     id: 'E006',
     name: 'Vikram Joshi',
     email: 'vikram@acme.test',
     role: 'EMPLOYEE',
-    dept: 'Operations',
+    dept: 'Sales',
     shift: '09:00',
     probation: true,
-    label: 'Vikram Joshi (Probation) - E006'
+    label: 'Vikram Joshi (Probation) - E006 (Sales, Shift 09:00)'
   }
 ];
 
@@ -70,16 +70,13 @@ export default function Login({ onLoginSuccess }) {
   const [isLoading, setIsLoading] = useState(false);
   const [errorMessage, setErrorMessage] = useState('');
 
-  const handleSelectEmployee = (empId, autoSubmit = false) => {
+  const handleSelectEmployee = (empId) => {
     setSelectedEmpId(empId);
     const emp = SEEDED_EMPLOYEES.find((e) => e.id === empId);
     if (emp) {
       setEmail(emp.email);
       setPassword('Test@123');
       setErrorMessage('');
-      if (autoSubmit) {
-        performLogin(emp.email, 'Test@123');
-      }
     }
   };
 
@@ -232,7 +229,7 @@ export default function Login({ onLoginSuccess }) {
                   <button
                     key={emp.id}
                     type="button"
-                    onClick={() => handleSelectEmployee(emp.id, true)}
+                    onClick={() => handleSelectEmployee(emp.id)}
                     disabled={isLoading}
                     style={{
                       padding: '6px 8px',
@@ -246,7 +243,7 @@ export default function Login({ onLoginSuccess }) {
                       borderStyle: 'solid',
                       color: isSelected ? 'var(--accent-amber-hover)' : 'var(--ink-primary)'
                     }}
-                    title={`Instant login as ${emp.name} (${emp.id})`}
+                    title={`Select credentials for ${emp.name} (${emp.id})`}
                   >
                     <span style={{ fontWeight: 600 }}>{emp.id}</span>
                     <span style={{
