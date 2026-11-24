@@ -88,84 +88,78 @@ export default function ConfirmationCard({
       >
         <div style={{ display: 'flex', alignItems: 'center', gap: '8px' }}>
           <span
-            className="font-mono"
             style={{
-              fontSize: '11px',
-              fontWeight: 700,
-              letterSpacing: '0.5px',
+              fontSize: '12px',
+              fontWeight: 600,
               color: 'var(--ink-primary)'
             }}
           >
-            ACTION REQUIRED // CONFIRM LEAVE SUBMISSION
+            Action Required: Confirm Leave Request
           </span>
         </div>
 
         {/* Status Badge */}
         {status === 'pending' && (
           <span
-            className="font-mono"
             style={{
-              fontSize: '10px',
-              padding: '2px 6px',
+              fontSize: '11px',
+              padding: '2px 8px',
               backgroundColor: '#FEF3C7',
               border: '1px solid #FCD34D',
               color: '#92400E',
-              fontWeight: 600,
-              borderRadius: '2px'
+              fontWeight: 500,
+              borderRadius: '4px'
             }}
           >
-            PENDING USER CONFIRMATION
+            Pending Confirmation
           </span>
         )}
 
         {status === 'submitting' && (
           <span
-            className="font-mono"
             style={{
-              fontSize: '10px',
-              padding: '2px 6px',
+              fontSize: '11px',
+              padding: '2px 8px',
               backgroundColor: '#E2E8F0',
               border: '1px solid #CBD5E1',
               color: '#334155',
-              fontWeight: 600,
-              borderRadius: '2px'
+              fontWeight: 500,
+              borderRadius: '4px'
             }}
           >
-            TRANSMITTING TO HR DATABASE...
+            Submitting request...
           </span>
         )}
 
         {status === 'submitted' && (
           <span
-            className="font-mono"
             style={{
-              fontSize: '10px',
-              padding: '2px 6px',
+              fontSize: '11px',
+              padding: '2px 8px',
               backgroundColor: '#ECFDF5',
               border: '1px solid #A7F3D0',
               color: '#065F46',
-              fontWeight: 600,
-              borderRadius: '2px'
+              fontWeight: 500,
+              borderRadius: '4px'
             }}
           >
-            SUBMITTED (PENDING APPROVAL)
+            Submitted (Pending Approval)
           </span>
         )}
 
         {status === 'cancelled' && (
           <span
-            className="font-mono"
             style={{
-              fontSize: '10px',
-              padding: '2px 6px',
+              fontSize: '11px',
+              padding: '2px 8px',
               backgroundColor: '#F1F5F9',
               border: '1px solid #CBD5E1',
               color: '#64748B',
-              fontWeight: 600,
-              borderRadius: '2px'
+              fontWeight: 500,
+              borderRadius: '4px'
             }}
           >
-            CANCELLED BY EMPLOYEE
+            Cancelled
           </span>
         )}
       </div>
@@ -180,27 +174,26 @@ export default function ConfirmationCard({
             marginBottom: '10px',
             backgroundColor: 'var(--surface-subtle)',
             border: '1px solid var(--border-light)',
-            padding: '10px 12px'
+            padding: '10px 12px',
+            borderRadius: '6px'
           }}
         >
           <div>
             <div
-              className="font-mono"
-              style={{ fontSize: '10px', color: 'var(--ink-dim)', marginBottom: '2px' }}
+              style={{ fontSize: '11px', color: 'var(--ink-dim)', marginBottom: '2px', fontWeight: 500 }}
             >
-              LEAVE TYPE
+              Leave Type
             </div>
-            <div className="font-mono" style={{ fontSize: '12px', fontWeight: 600, textTransform: 'uppercase' }}>
+            <div className="font-mono" style={{ fontSize: '12px', fontWeight: 600 }}>
               {leaveType}
             </div>
           </div>
 
           <div>
             <div
-              className="font-mono"
-              style={{ fontSize: '10px', color: 'var(--ink-dim)', marginBottom: '2px' }}
+              style={{ fontSize: '11px', color: 'var(--ink-dim)', marginBottom: '2px', fontWeight: 500 }}
             >
-              FROM DATE
+              From Date
             </div>
             <div className="font-mono" style={{ fontSize: '12px', fontWeight: 600 }}>
               {fromDate}
@@ -209,10 +202,9 @@ export default function ConfirmationCard({
 
           <div>
             <div
-              className="font-mono"
-              style={{ fontSize: '10px', color: 'var(--ink-dim)', marginBottom: '2px' }}
+              style={{ fontSize: '11px', color: 'var(--ink-dim)', marginBottom: '2px', fontWeight: 500 }}
             >
-              TO DATE
+              To Date
             </div>
             <div className="font-mono" style={{ fontSize: '12px', fontWeight: 600 }}>
               {toDate}
@@ -221,16 +213,15 @@ export default function ConfirmationCard({
 
           <div>
             <div
-              className="font-mono"
-              style={{ fontSize: '10px', color: 'var(--ink-dim)', marginBottom: '2px' }}
+              style={{ fontSize: '11px', color: 'var(--ink-dim)', marginBottom: '2px', fontWeight: 500 }}
             >
-              TOTAL DAYS
+              Total Days
             </div>
             <div
               className="font-mono"
               style={{ fontSize: '12px', fontWeight: 600, color: 'var(--accent-amber)' }}
             >
-              {daysCount} {typeof daysCount === 'number' ? (daysCount === 1 ? 'DAY' : 'DAYS') : ''}
+              {daysCount} {typeof daysCount === 'number' ? (daysCount === 1 ? 'day' : 'days') : ''}
             </div>
           </div>
         </div>
@@ -245,8 +236,8 @@ export default function ConfirmationCard({
             gap: '6px'
           }}
         >
-          <span className="font-mono" style={{ color: 'var(--ink-dim)', fontSize: '11px' }}>
-            REASON:
+          <span style={{ color: 'var(--ink-dim)', fontSize: '12px', fontWeight: 500 }}>
+            Reason:
           </span>
           <span>{reason}</span>
         </div>

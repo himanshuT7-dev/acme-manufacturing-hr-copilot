@@ -141,30 +141,31 @@ export default function Login({ onLoginSuccess }) {
           justifyContent: 'space-between'
         }}>
           <div>
-            <div className="font-mono" style={{
-              fontSize: '12px',
+            <div style={{
+              fontSize: '15px',
               fontWeight: 700,
-              letterSpacing: '0.5px',
-              color: 'var(--ink-primary)'
+              color: 'var(--ink-primary)',
+              letterSpacing: '-0.2px'
             }}>
-              ACME MANUFACTURING // HRMS PORTAL
+              Acme HR
             </div>
             <div style={{
-              fontSize: '11px',
+              fontSize: '12px',
               color: 'var(--ink-muted)',
               marginTop: '2px'
             }}>
-              Workforce Operations & Copilot System
+              Employee Self-Service
             </div>
           </div>
-          <span className="font-mono" style={{
-            fontSize: '10px',
-            padding: '2px 6px',
-            backgroundColor: '#E2E8F0',
+          <span style={{
+            fontSize: '11px',
+            padding: '3px 8px',
+            backgroundColor: '#F1F5F9',
             color: 'var(--ink-muted)',
-            borderRadius: '2px'
+            borderRadius: '4px',
+            fontWeight: 500
           }}>
-            AUTH-GATE v2.4
+            Sign In
           </span>
         </div>
 
@@ -174,6 +175,7 @@ export default function Login({ onLoginSuccess }) {
             marginBottom: '22px',
             padding: '14px',
             backgroundColor: 'var(--surface-subtle)',
+            borderRadius: '8px',
             border: '1px solid var(--border-medium)'
           }}>
             <div style={{
@@ -182,16 +184,17 @@ export default function Login({ onLoginSuccess }) {
               justifyContent: 'space-between',
               marginBottom: '10px'
             }}>
-              <span className="font-mono" style={{
+              <span style={{
                 fontSize: '11px',
-                fontWeight: 700,
-                letterSpacing: '0.5px',
-                color: 'var(--accent-amber)'
+                fontWeight: 600,
+                color: 'var(--ink-muted)',
+                textTransform: 'uppercase',
+                letterSpacing: '0.4px'
               }}>
-                [QUICK DEMO LOGIN - 6 SEEDED EMPLOYEES]
+                Demo Accounts
               </span>
-              <span className="font-mono" style={{ fontSize: '10px', color: 'var(--ink-dim)' }}>
-                1-CLICK TEST
+              <span style={{ fontSize: '11px', color: 'var(--ink-dim)' }}>
+                Select to fill credentials
               </span>
             </div>
 
@@ -202,16 +205,16 @@ export default function Login({ onLoginSuccess }) {
                 style={{
                   width: '100%',
                   fontSize: '12px',
-                  fontFamily: 'var(--font-mono)',
                   padding: '8px 10px',
                   backgroundColor: '#FFFFFF',
                   borderColor: 'var(--border-medium)',
+                  borderRadius: '6px',
                   cursor: 'pointer'
                 }}
               >
                 {SEEDED_EMPLOYEES.map((emp) => (
                   <option key={emp.id} value={emp.id}>
-                    {emp.label} {emp.probation ? '• [PROBATION]' : ''} {emp.role === 'HR_ADMIN' ? '• [HR ADMIN]' : ''}
+                    {emp.id} • {emp.name} ({emp.dept}) {emp.probation ? '• [Probation]' : ''} {emp.role === 'HR_ADMIN' ? '• [HR Admin]' : ''}
                   </option>
                 ))}
               </select>
@@ -232,28 +235,43 @@ export default function Login({ onLoginSuccess }) {
                     onClick={() => handleSelectEmployee(emp.id)}
                     disabled={isLoading}
                     style={{
-                      padding: '6px 8px',
-                      fontSize: '11px',
-                      fontFamily: 'var(--font-mono)',
+                      padding: '7px 10px',
+                      fontSize: '12px',
+                      display: 'flex',
+                      alignItems: 'center',
+                      gap: '8px',
+                      borderRadius: '6px',
                       textAlign: 'left',
-                      justifyContent: 'flex-start',
                       backgroundColor: isSelected ? 'var(--accent-amber-subtle)' : '#FFFFFF',
                       borderColor: isSelected ? 'var(--accent-amber-border)' : 'var(--border-light)',
                       borderWidth: '1px',
                       borderStyle: 'solid',
-                      color: isSelected ? 'var(--accent-amber-hover)' : 'var(--ink-primary)'
+                      color: isSelected ? 'var(--accent-amber-hover)' : 'var(--ink-primary)',
+                      cursor: 'pointer',
+                      transition: 'all 0.15s ease'
                     }}
                     title={`Select credentials for ${emp.name} (${emp.id})`}
                   >
-                    <span style={{ fontWeight: 600 }}>{emp.id}</span>
+                    <span className="font-mono" style={{
+                      fontWeight: 600,
+                      fontSize: '11px',
+                      color: isSelected ? 'var(--accent-amber-hover)' : 'var(--ink-dim)'
+                    }}>
+                      {emp.id}
+                    </span>
                     <span style={{
+                      fontWeight: 500,
                       overflow: 'hidden',
                       textOverflow: 'ellipsis',
-                      whiteSpace: 'nowrap',
-                      marginLeft: '4px'
+                      whiteSpace: 'nowrap'
                     }}>
-                      {emp.name.split(' ')[0]} {emp.role === 'HR_ADMIN' ? '★' : ''}
+                      {emp.name.split(' ')[0]}
                     </span>
+                    {emp.role === 'HR_ADMIN' && (
+                      <span style={{ fontSize: '11px', color: '#B45309', marginLeft: 'auto' }}>
+                        ★
+                      </span>
+                    )}
                   </button>
                 );
               })}
@@ -336,7 +354,7 @@ export default function Login({ onLoginSuccess }) {
                 fontWeight: 600
               }}
             >
-              {isLoading ? 'AUTHENTICATING CREDENTIALS...' : 'SIGN IN TO PORTAL →'}
+              {isLoading ? 'Signing in...' : 'Sign In →'}
             </button>
           </form>
         </div>
@@ -346,11 +364,11 @@ export default function Login({ onLoginSuccess }) {
           padding: '12px 20px',
           borderTop: '1px solid var(--border-light)',
           backgroundColor: '#F8FAFC',
-          fontSize: '10px',
+          fontSize: '11px',
           color: 'var(--ink-dim)',
           textAlign: 'center'
-        }} className="font-mono">
-          CONFIDENTIAL // AUTHORIZED ACME INDUSTRIAL PERSONNEL ONLY
+        }}>
+          Acme Manufacturing • Employee Self-Service Portal
         </div>
       </div>
     </div>

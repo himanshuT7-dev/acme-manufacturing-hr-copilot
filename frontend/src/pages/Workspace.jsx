@@ -34,6 +34,22 @@ export const DEMO_PERSONAS = [
   { id: 'E006', name: 'Vikram', email: 'vikram@acme.test', role: 'employee', dept: 'Sales', shift: '09:00', probation: true, tag: 'PROBATION', subtitle: 'Sales Probation' }
 ];
 
+// Helper to compute a valid future weekday (at least 5 days from now) in YYYY-MM-DD format
+export function getFutureWeekday(daysAhead = 5) {
+  const d = new Date();
+  d.setDate(d.getDate() + daysAhead);
+  // If Saturday (6), push forward by 2 days to Monday
+  if (d.getDay() === 6) d.setDate(d.getDate() + 2);
+  // If Sunday (0), push forward by 1 day to Monday
+  else if (d.getDay() === 0) d.setDate(d.getDate() + 1);
+  const yyyy = d.getFullYear();
+  const mm = String(d.getMonth() + 1).padStart(2, '0');
+  const dd = String(d.getDate()).padStart(2, '0');
+  return `${yyyy}-${mm}-${dd}`;
+}
+
+export const DEFAULT_FUTURE_LEAVE_DATE = getFutureWeekday(5);
+
 // Organized Test Scenarios for the Scenario Runner
 export const SCENARIO_GROUPS = [
   {
@@ -44,14 +60,14 @@ export const SCENARIO_GROUPS = [
     ]
   },
   {
-    category: 'Policy RAG',
+    category: 'Policy Q&A',
     items: [
       { id: 'S06', title: 'Probation WFH Denial', query: 'Can I work from home while on probation?', hint: 'Cites WFH Policy section 1 (E006)' },
       { id: 'S07', title: 'WFH Limits (Accounts)', query: 'Am I eligible to work from home and what is the limit?', hint: 'Confirms Accounts eligible for max 4 days/month (E003)' }
     ]
   },
   {
-    category: 'RBAC & Security',
+    category: 'Access & Security',
     items: [
       { id: 'S03', title: 'Peer Leave Block (403)', query: "What is Rahul Mehta's (E002) leave balance?", hint: 'RBAC 403 enforcement for non-admin' },
       { id: 'S04', title: 'Peer Attendance Block', query: "Show me Rahul Mehta's (E002) attendance summary for last week", hint: 'RBAC 403 enforcement for non-admin' },
@@ -61,10 +77,10 @@ export const SCENARIO_GROUPS = [
     ]
   },
   {
-    category: 'Leave Action',
+    category: 'Leave & Attendance',
     items: [
       { id: 'S08', title: 'Rahul Late Deduction', query: 'How many late marks do I have for October and what is the deduction?', hint: 'Reports 3 late marks & 0.5 day pay deduction (E002)' },
-      { id: 'S10', title: 'HITL Leave Hold Flow', query: 'I need to apply for casual leave on 2026-11-10 for personal work.', hint: 'Hold -> Confirm workflow without premature DB write' }
+      { id: 'S10', title: 'HITL Leave Hold Flow', query: `I need to apply for casual leave on ${DEFAULT_FUTURE_LEAVE_DATE} for personal work.`, hint: 'Hold -> Confirm workflow without premature DB write' }
     ]
   }
 ];
@@ -187,37 +203,38 @@ Employees on probation (\`on_probation: true\`) are entitled to Casual Leave (CL
   }
 };
 
-export default function Workspace({ user, token, onSignOut, onSwitchUser }) {
-  const isHrAdmin = user.role === 'hr_admin';
+export const createInitialMessage = (u) => ({
+  id: `welcome-${u.employee_id}-${Date.now()}`,
+  role: 'assistant',
+  text: `Hello ${u.name.split(' ')[0]}! I am your **HR Assistant**.
 
-  // Chat State
-  const [messages, setMessages] = useState([
-    {
-      id: 'welcome',
-      role: 'assistant',
-      text: `Hello ${user.name.split(' ')[0]}! I am the **Acme Manufacturing HR Copilot**.
+Logged in as: **${u.name}** (\`${u.employee_id}\`) • **${u.role === 'hr_admin' ? 'HR Admin' : 'Employee'}** • Department: **${u.department}**
 
 I can help you review your leave entitlements, audit attendance & shift records, evaluate remote work policies, or prepare leave applications with interactive approval.
 
 Select a quick scenario on the left, or ask any question directly below.`,
-      tools_used: [],
-      citations: [],
-      pending_confirmation: null,
-      timestamp: new Date().toLocaleTimeString([], { hour: '2-digit', minute: '2-digit', second: '2-digit' })
-    }
-  ]);
+  tools_used: [],
+  citations: [],
+  pending_confirmation: null,
+  timestamp: new Date().toLocaleTimeString([], { hour: '2-digit', minute: '2-digit', second: '2-digit' })
+});
+
+export default function Workspace({ user, token, onSignOut, onSwitchUser }) {
+  const isHrAdmin = user.role === 'hr_admin';
+
+  // Chat State
+  const [messages, setMessages] = useState(() => [createInitialMessage(user)]);
   const [inputValue, setInputValue] = useState('');
   const [isSending, setIsSending] = useState(false);
   const [executedScenarios, setExecutedScenarios] = useState(new Set());
-
   // Left Sidebar Quota State
   const [leaveBalance, setLeaveBalance] = useState(null);
-  const [balanceLoading, setBalanceLoading] = useState(false);
+  const [balanceLoading, setBalanceLoading] = useState(true);
 
   // Right Drawer State
   const [activeDrawerTab, setActiveDrawerTab] = useState('attendance'); // 'attendance' | 'policy'
   const [attendanceRecords, setAttendanceRecords] = useState([]);
-  const [attendanceLoading, setAttendanceLoading] = useState(false);
+  const [attendanceLoading, setAttendanceLoading] = useState(true);
   const [selectedPolicyKey, setSelectedPolicyKey] = useState('Attendance Policy');
   const [highlightedSection, setHighlightedSection] = useState(null);
 
@@ -228,47 +245,107 @@ Select a quick scenario on the left, or ask any question directly below.`,
   const inputRef = useRef(null);
   const policySectionRefs = useRef({});
 
-  // 1. Fetch user's leave balance
-  const fetchLeaveBalance = async () => {
+  // Manual refresh helper (e.g. after confirming a leave request)
+  const refreshUserData = async () => {
     setBalanceLoading(true);
+    setAttendanceLoading(true);
     try {
-      const res = await fetch('/api/me/leave-balance', {
+      const balRes = await fetch('/api/me/leave-balance', {
         headers: { Authorization: `Bearer ${token}` }
       });
-      if (res.ok) {
-        const data = await res.json();
-        setLeaveBalance(data);
+      if (balRes.ok) {
+        const balData = await balRes.json();
+        setLeaveBalance(balData);
       }
     } catch (err) {
-      console.warn('Failed to fetch leave balance:', err);
+      console.warn('Failed to refresh leave balance:', err);
     } finally {
       setBalanceLoading(false);
     }
-  };
 
-  // 2. Fetch user's reference week attendance (Oct 19–23, 2026)
-  const fetchAttendance = async () => {
-    setAttendanceLoading(true);
     try {
-      const res = await fetch('/api/me/attendance?from=2026-10-19&to=2026-10-23', {
+      const attRes = await fetch('/api/me/attendance?from=2026-10-19&to=2026-10-23', {
         headers: { Authorization: `Bearer ${token}` }
       });
-      if (res.ok) {
-        const data = await res.json();
-        setAttendanceRecords(data.records || data.attendance || []);
+      if (attRes.ok) {
+        const attData = await attRes.json();
+        setAttendanceRecords(attData.records || attData.attendance || []);
       }
     } catch (err) {
-      console.warn('Failed to fetch attendance:', err);
+      console.warn('Failed to refresh attendance:', err);
     } finally {
       setAttendanceLoading(false);
     }
   };
 
-  // On mount or user switch, refresh data
+  // Session Isolation: Reset state & fetch data whenever active user or token changes
   useEffect(() => {
-    fetchLeaveBalance();
-    fetchAttendance();
-  }, [user.employee_id, token]);
+    let isCancelled = false;
+    const controller = new AbortController();
+
+    // 1. Reset messages back to a single fresh initialization message tailored to newly logged-in employee
+    setMessages([createInitialMessage(user)]);
+
+    // 2. Clear inputs, in-flight loading, active highlights, and executed scenario tags
+    setInputValue('');
+    setIsSending(false);
+    setHighlightedSection(null);
+    setExecutedScenarios(new Set());
+
+    // 3. Immediately clear stale quota & attendance data to prevent displaying previous user's data
+    setLeaveBalance(null);
+    setAttendanceRecords([]);
+    setBalanceLoading(true);
+    setAttendanceLoading(true);
+
+    // 4. Fetch fresh data for the newly active employee with signal abort on cleanup
+    const loadUserData = async () => {
+      try {
+        const balRes = await fetch('/api/me/leave-balance', {
+          headers: { Authorization: `Bearer ${token}` },
+          signal: controller.signal
+        });
+        if (balRes.ok && !isCancelled) {
+          const balData = await balRes.json();
+          setLeaveBalance(balData);
+        }
+      } catch (err) {
+        if (!isCancelled && err.name !== 'AbortError') {
+          console.warn('Failed to fetch leave balance:', err);
+        }
+      } finally {
+        if (!isCancelled) {
+          setBalanceLoading(false);
+        }
+      }
+
+      try {
+        const attRes = await fetch('/api/me/attendance?from=2026-10-19&to=2026-10-23', {
+          headers: { Authorization: `Bearer ${token}` },
+          signal: controller.signal
+        });
+        if (attRes.ok && !isCancelled) {
+          const attData = await attRes.json();
+          setAttendanceRecords(attData.records || attData.attendance || []);
+        }
+      } catch (err) {
+        if (!isCancelled && err.name !== 'AbortError') {
+          console.warn('Failed to fetch attendance:', err);
+        }
+      } finally {
+        if (!isCancelled) {
+          setAttendanceLoading(false);
+        }
+      }
+    };
+
+    loadUserData();
+
+    return () => {
+      isCancelled = true;
+      controller.abort();
+    };
+  }, [user?.employee_id, token]);
 
   // Scroll to bottom of chat
   useEffect(() => {
@@ -344,8 +421,7 @@ Select a quick scenario on the left, or ask any question directly below.`,
 
       // If leave was confirmed, refresh balance & attendance
       if (confirmationPayload) {
-        fetchLeaveBalance();
-        fetchAttendance();
+        refreshUserData();
       }
     } catch (err) {
       setMessages((prev) => [
@@ -376,7 +452,12 @@ Select a quick scenario on the left, or ask any question directly below.`,
   // Click scenario item
   const handleRunScenario = (sc) => {
     setExecutedScenarios((prev) => new Set([...prev, sc.id]));
-    executeSendMessage(sc.query);
+    let queryText = sc.query;
+    if (sc.id === 'S10') {
+      const dynamicDate = getFutureWeekday(5);
+      queryText = `I need to apply for casual leave on ${dynamicDate} for personal work.`;
+    }
+    executeSendMessage(queryText);
   };
 
   // Clear chat
@@ -418,25 +499,25 @@ Select a quick scenario on the left, or ask any question directly below.`,
     }, 100);
   };
 
-  // Calculate quota numbers with safe fallbacks
+  // Calculate quota numbers directly from fetched leave balance
   const getQuota = (type) => {
     if (type === 'CL') {
-      const entitled = 8;
-      const rem = leaveBalance?.cl ?? (user.employee_id === 'E002' ? 0 : user.employee_id === 'E006' ? 4 : 5);
-      const used = Math.max(0, entitled - rem);
-      return { entitled, remaining: rem, used };
+      const entitled = leaveBalance?.entitlements?.cl?.entitled ?? 8;
+      const remaining = leaveBalance ? (leaveBalance.cl ?? leaveBalance.casual_leave ?? 0) : 0;
+      const used = leaveBalance?.entitlements?.cl?.used ?? Math.max(0, entitled - remaining);
+      return { entitled, remaining, used };
     }
     if (type === 'SL') {
-      const entitled = 6;
-      const rem = leaveBalance?.sl ?? (user.employee_id === 'E003' ? 1 : 5);
-      const used = Math.max(0, entitled - rem);
-      return { entitled, remaining: rem, used };
+      const entitled = leaveBalance?.entitlements?.sl?.entitled ?? 6;
+      const remaining = leaveBalance ? (leaveBalance.sl ?? leaveBalance.sick_leave ?? 0) : 0;
+      const used = leaveBalance?.entitlements?.sl?.used ?? Math.max(0, entitled - remaining);
+      return { entitled, remaining, used };
     }
     if (type === 'EL') {
-      const entitled = user.on_probation ? 0 : 15;
-      const rem = leaveBalance?.el ?? (user.on_probation ? 0 : user.employee_id === 'E004' ? 3 : 11);
-      const used = Math.max(0, entitled - rem);
-      return { entitled, remaining: rem, used };
+      const entitled = user.on_probation ? 0 : (leaveBalance?.entitlements?.el?.entitled ?? 15);
+      const remaining = (leaveBalance && !user.on_probation) ? (leaveBalance.el ?? leaveBalance.annual_leave ?? 0) : 0;
+      const used = leaveBalance?.entitlements?.el?.used ?? Math.max(0, entitled - remaining);
+      return { entitled, remaining, used };
     }
     return { entitled: 0, remaining: 0, used: 0 };
   };
@@ -477,11 +558,11 @@ Select a quick scenario on the left, or ask any question directly below.`,
             <Building2 size={16} />
           </div>
           <div>
-            <div style={{ fontWeight: 700, fontSize: '13px', letterSpacing: '-0.2px', color: 'var(--ink-primary)' }}>
-              ACME HR COMMAND CENTER
+            <div style={{ fontWeight: 700, fontSize: '14px', letterSpacing: '-0.2px', color: 'var(--ink-primary)' }}>
+              Acme HR
             </div>
-            <div className="font-mono" style={{ fontSize: '10px', color: 'var(--ink-dim)' }}>
-              MFG-HRMS // PORTAL v2.4
+            <div style={{ fontSize: '11px', color: 'var(--ink-muted)', marginTop: '1px' }}>
+              Employee Self-Service
             </div>
           </div>
         </div>
@@ -498,8 +579,8 @@ Select a quick scenario on the left, or ask any question directly below.`,
             border: '1px solid #E2E8F0'
           }}
         >
-          <span className="font-mono" style={{ fontSize: '10px', fontWeight: 600, color: 'var(--ink-dim)', padding: '0 6px' }}>
-            SWITCH DEMO PERSONA:
+          <span style={{ fontSize: '11px', fontWeight: 600, color: 'var(--ink-muted)', padding: '0 6px' }}>
+            Switch user:
           </span>
           {DEMO_PERSONAS.map((demo) => {
             const isActive = demo.id === user.employee_id;
@@ -550,9 +631,9 @@ Select a quick scenario on the left, or ask any question directly below.`,
         {/* Right: Active Telemetry & Sign Out */}
         <div style={{ display: 'flex', alignItems: 'center', gap: '12px' }}>
           <div
-            className="font-mono"
             style={{
               fontSize: '11px',
+              fontWeight: 500,
               padding: '2px 8px',
               borderRadius: '6px',
               backgroundColor: '#ECFDF5',
@@ -560,11 +641,11 @@ Select a quick scenario on the left, or ask any question directly below.`,
               color: '#065F46',
               display: 'flex',
               alignItems: 'center',
-              gap: '5px'
+              gap: '6px'
             }}
           >
             <span style={{ width: '6px', height: '6px', borderRadius: '50%', backgroundColor: '#10B981' }}></span>
-            <span>NODE_ONLINE</span>
+            <span>Connected</span>
           </div>
 
           <button
@@ -608,9 +689,9 @@ Select a quick scenario on the left, or ask any question directly below.`,
                 <div className="font-mono" style={{ fontSize: '11px', color: 'var(--ink-dim)' }}>{user.email}</div>
               </div>
               {isHrAdmin ? (
-                <span className="badge-role-admin">HR_ADMIN</span>
+                <span className="badge-role-admin">HR Admin</span>
               ) : (
-                <span className="badge-role-employee">EMPLOYEE</span>
+                <span className="badge-role-employee">Employee</span>
               )}
             </div>
 
@@ -622,7 +703,7 @@ Select a quick scenario on the left, or ask any question directly below.`,
 
             {user.on_probation ? (
               <div style={{ marginTop: '6px' }}>
-                <span className="badge-probation">ACTIVE PROBATION (90-DAY)</span>
+                <span className="badge-probation">Probation (90-day)</span>
               </div>
             ) : null}
           </div>
@@ -630,8 +711,8 @@ Select a quick scenario on the left, or ask any question directly below.`,
           {/* Visual Leave Quota Bars */}
           <div style={{ padding: '14px', borderBottom: '1px solid var(--border-light)' }}>
             <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', marginBottom: '10px' }}>
-              <span className="font-mono" style={{ fontSize: '11px', fontWeight: 700, color: 'var(--ink-primary)', letterSpacing: '0.4px' }}>
-                ANNUAL LEAVE QUOTA
+              <span style={{ fontSize: '11px', fontWeight: 700, color: 'var(--ink-primary)', letterSpacing: '0.4px', textTransform: 'uppercase' }}>
+                Annual Leave Quota
               </span>
               {balanceLoading && <RefreshCw size={12} className="animate-spin" style={{ color: 'var(--ink-dim)' }} />}
             </div>
@@ -647,7 +728,11 @@ Select a quick scenario on the left, or ask any question directly below.`,
                     <div style={{ display: 'flex', justifyContent: 'space-between', fontSize: '11px' }}>
                       <span style={{ fontWeight: 600, color: 'var(--ink-primary)' }}>Casual (CL)</span>
                       <span className="font-mono" style={{ color: q.remaining === 0 ? '#DC2626' : 'var(--ink-dim)' }}>
-                        <strong>{q.remaining}</strong> / {q.entitled} left ({q.used} used)
+                        {balanceLoading && !leaveBalance ? (
+                          <span style={{ color: 'var(--ink-dim)' }}>Loading...</span>
+                        ) : (
+                          <><strong>{q.remaining}</strong> / {q.entitled} left ({q.used} used)</>
+                        )}
                       </span>
                     </div>
                     <div className="quota-progress-track">
@@ -667,7 +752,11 @@ Select a quick scenario on the left, or ask any question directly below.`,
                     <div style={{ display: 'flex', justifyContent: 'space-between', fontSize: '11px' }}>
                       <span style={{ fontWeight: 600, color: 'var(--ink-primary)' }}>Sick (SL)</span>
                       <span className="font-mono" style={{ color: q.remaining === 0 ? '#DC2626' : 'var(--ink-dim)' }}>
-                        <strong>{q.remaining}</strong> / {q.entitled} left ({q.used} used)
+                        {balanceLoading && !leaveBalance ? (
+                          <span style={{ color: 'var(--ink-dim)' }}>Loading...</span>
+                        ) : (
+                          <><strong>{q.remaining}</strong> / {q.entitled} left ({q.used} used)</>
+                        )}
                       </span>
                     </div>
                     <div className="quota-progress-track">
@@ -687,7 +776,9 @@ Select a quick scenario on the left, or ask any question directly below.`,
                     <div style={{ display: 'flex', justifyContent: 'space-between', fontSize: '11px' }}>
                       <span style={{ fontWeight: 600, color: 'var(--ink-primary)' }}>Earned (EL)</span>
                       <span className="font-mono" style={{ color: q.entitled === 0 ? '#64748B' : 'var(--ink-dim)' }}>
-                        {user.on_probation ? (
+                        {balanceLoading && !leaveBalance ? (
+                          <span style={{ color: 'var(--ink-dim)' }}>Loading...</span>
+                        ) : user.on_probation ? (
                           <span style={{ color: '#B45309', fontWeight: 600 }}>0 (Probation)</span>
                         ) : (
                           <><strong>{q.remaining}</strong> / {q.entitled} left ({q.used} used)</>
@@ -706,19 +797,19 @@ Select a quick scenario on the left, or ask any question directly below.`,
           {/* Quick Scenario Runner */}
           <div style={{ padding: '14px', flex: 1 }}>
             <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', marginBottom: '8px' }}>
-              <span className="font-mono" style={{ fontSize: '11px', fontWeight: 700, color: 'var(--ink-primary)', letterSpacing: '0.4px' }}>
-                SCENARIO RUNNER
+              <span style={{ fontSize: '11px', fontWeight: 700, color: 'var(--ink-primary)', letterSpacing: '0.4px', textTransform: 'uppercase' }}>
+                Test Scenarios
               </span>
               <span className="font-mono" style={{ fontSize: '10px', color: 'var(--ink-dim)' }}>
-                {executedScenarios.size}/11 TESTED
+                {executedScenarios.size}/11 tested
               </span>
             </div>
 
             <div style={{ display: 'flex', flexDirection: 'column', gap: '12px' }}>
               {SCENARIO_GROUPS.map((grp) => (
                 <div key={grp.category}>
-                  <div className="font-mono" style={{ fontSize: '10px', fontWeight: 700, color: 'var(--ink-dim)', marginBottom: '5px', textTransform: 'uppercase' }}>
-                    // {grp.category}
+                  <div style={{ fontSize: '11px', fontWeight: 600, color: 'var(--ink-dim)', marginBottom: '5px' }}>
+                    {grp.category}
                   </div>
                   <div style={{ display: 'flex', flexDirection: 'column', gap: '4px' }}>
                     {grp.items.map((item) => {
@@ -809,10 +900,13 @@ Select a quick scenario on the left, or ask any question directly below.`,
                   justifyContent: 'space-between'
                 }}
               >
-                <div style={{ display: 'flex', alignItems: 'center', gap: '6px' }}>
-                  <Sparkles size={14} style={{ color: 'var(--accent-amber)' }} />
-                  <span className="font-mono" style={{ fontSize: '11px', fontWeight: 600, color: 'var(--ink-muted)' }}>
-                    COPILOT // LIVE SESSION ({user.employee_id})
+                <div style={{ display: 'flex', alignItems: 'center', gap: '8px' }}>
+                  <Sparkles size={14} style={{ color: 'var(--accent-teal)' }} />
+                  <span style={{ fontSize: '12px', fontWeight: 600, color: 'var(--ink-primary)' }}>
+                    Conversation
+                  </span>
+                  <span style={{ fontSize: '11px', color: 'var(--ink-dim)' }}>
+                    • {user.name} ({user.role === 'hr_admin' ? 'HR Admin' : 'Employee'})
                   </span>
                 </div>
                 <button
@@ -822,7 +916,7 @@ Select a quick scenario on the left, or ask any question directly below.`,
                   style={{ fontSize: '11px', padding: '2px 8px', height: '22px' }}
                   title="Clear conversation log"
                 >
-                  Clear Feed
+                  Clear chat
                 </button>
               </div>
 
@@ -844,15 +938,26 @@ Select a quick scenario on the left, or ask any question directly below.`,
                       {/* Message Meta Header */}
                       <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', marginBottom: '6px' }}>
                         <span
-                          className="font-mono"
                           style={{
-                            fontSize: '11px',
-                            fontWeight: 700,
-                            letterSpacing: '0.4px',
-                            color: isUser ? 'var(--ink-primary)' : 'var(--accent-teal)'
+                            fontSize: '12px',
+                            fontWeight: 600,
+                            letterSpacing: '0.2px',
+                            color: isUser ? 'var(--ink-primary)' : 'var(--accent-teal)',
+                            display: 'flex',
+                            alignItems: 'center',
+                            gap: '6px'
                           }}
                         >
-                          {isUser ? `USER // ${user.name.toUpperCase()} (${user.employee_id})` : 'ACME COPILOT // ORCHESTRATION ENGINE'}
+                          {isUser ? (
+                            <>
+                              <span>You</span>
+                              <span className="font-mono" style={{ fontSize: '10px', fontWeight: 400, color: 'var(--ink-dim)' }}>
+                                ({user.employee_id})
+                              </span>
+                            </>
+                          ) : (
+                            <span>HR Assistant</span>
+                          )}
                         </span>
                         <span className="font-mono" style={{ fontSize: '10px', color: 'var(--ink-dim)' }}>
                           {msg.timestamp}
@@ -1002,15 +1107,54 @@ Select a quick scenario on the left, or ask any question directly below.`,
           {activeDrawerTab === 'attendance' && (
             <div style={{ padding: '14px', display: 'flex', flexDirection: 'column', gap: '10px' }}>
               <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between' }}>
-                <span className="font-mono" style={{ fontSize: '11px', fontWeight: 700, color: 'var(--ink-primary)' }}>
-                  WEEK OF OCT 19–23, 2026
+                <span style={{ fontSize: '11px', fontWeight: 700, color: 'var(--ink-primary)', letterSpacing: '0.4px', textTransform: 'uppercase' }}>
+                  Week of Oct 19–23, 2026
                 </span>
                 {attendanceLoading && <RefreshCw size={12} className="animate-spin" style={{ color: 'var(--ink-dim)' }} />}
               </div>
 
-              {attendanceRecords.length === 0 ? (
-                <div style={{ padding: '20px', textAlign: 'center', fontSize: '12px', color: 'var(--ink-muted)' }}>
-                  No attendance punches found for this period.
+              {attendanceLoading ? (
+                <div style={{ padding: '32px 16px', textAlign: 'center', fontSize: '12px', color: 'var(--ink-muted)' }}>
+                  <RefreshCw size={14} className="animate-spin" style={{ display: 'inline-block', marginRight: '6px', verticalAlign: 'middle' }} />
+                  <span>Loading attendance records...</span>
+                </div>
+              ) : attendanceRecords.length === 0 ? (
+                <div
+                  style={{
+                    padding: '32px 16px',
+                    textAlign: 'center',
+                    backgroundColor: '#FFFFFF',
+                    borderRadius: '8px',
+                    border: '1px dashed var(--border-light)',
+                    display: 'flex',
+                    flexDirection: 'column',
+                    alignItems: 'center',
+                    justifyContent: 'center',
+                    gap: '10px'
+                  }}
+                >
+                  <div
+                    style={{
+                      width: '36px',
+                      height: '36px',
+                      borderRadius: '8px',
+                      backgroundColor: '#F1F5F9',
+                      display: 'flex',
+                      alignItems: 'center',
+                      justifyContent: 'center',
+                      color: 'var(--ink-muted)'
+                    }}
+                  >
+                    <Calendar size={18} />
+                  </div>
+                  <div>
+                    <div style={{ fontSize: '12px', fontWeight: 600, color: 'var(--ink-primary)', marginBottom: '3px' }}>
+                      No attendance punches recorded for Oct 19–23, 2026
+                    </div>
+                    <div style={{ fontSize: '11px', color: 'var(--ink-muted)', lineHeight: '1.4' }}>
+                      Employee has no shift check-in/out records logged for this reference period.
+                    </div>
+                  </div>
                 </div>
               ) : (
                 attendanceRecords.map((rec) => {
