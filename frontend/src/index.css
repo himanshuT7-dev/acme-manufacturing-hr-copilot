@@ -1,0 +1,266 @@
+/* ==========================================================================
+   ACME MANUFACTURING HRMS - SWISS INDUSTRIAL DESIGN SYSTEM
+   Principles: Utilitarian, Grid-aligned, Crisp, Flat, Zero AI Gradients/Shadows
+   ========================================================================== */
+
+:root {
+  /* Canvas & Surface */
+  --bg-canvas: #F8F9FA;
+  --surface: #FFFFFF;
+  --surface-subtle: #F1F5F9;
+  --surface-hover: #F8FAFC;
+  
+  /* Borders (Strictly Flat 1px) */
+  --border-light: #E2E8F0;
+  --border-medium: #CBD5E1;
+  --border-strong: #94A3B8;
+  --border-focus: #0F172A;
+
+  /* Typography / Ink */
+  --ink-primary: #0F172A;   /* Slate Black */
+  --ink-muted: #475569;     /* Slate Muted */
+  --ink-dim: #64748B;       /* Subtext / Placeholders */
+  --ink-inverse: #FFFFFF;
+
+  /* Industrial Accent Colors (Ochre Amber & Deep Teal) */
+  --accent-amber: #B45309;
+  --accent-amber-hover: #92400E;
+  --accent-amber-subtle: #FEF3C7;
+  --accent-amber-border: #FCD34D;
+  
+  --accent-teal: #0F766E;
+  --accent-teal-hover: #115E59;
+  --accent-teal-subtle: #CCFBF1;
+  --accent-teal-border: #99F6E4;
+
+  /* Status Colors */
+  --status-success-bg: #ECFDF5;
+  --status-success-border: #A7F3D0;
+  --status-success-ink: #065F46;
+
+  --status-warning-bg: #FFFBEB;
+  --status-warning-border: #FDE68A;
+  --status-warning-ink: #92400E;
+
+  --status-error-bg: #FEF2F2;
+  --status-error-border: #FECACA;
+  --status-error-ink: #991B1B;
+
+  /* Metadata Tag styling */
+  --tag-bg: #F1F5F9;
+  --tag-border: #CBD5E1;
+  --tag-ink: #334155;
+
+  /* Fonts */
+  --font-sans: 'Inter', -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, Helvetica, Arial, sans-serif;
+  --font-mono: 'JetBrains Mono', ui-monospace, SFMono-Regular, Menlo, Monaco, Consolas, monospace;
+}
+
+/* Reset & Box Sizing */
+*, *::before, *::after {
+  box-sizing: border-box;
+  margin: 0;
+  padding: 0;
+}
+
+html, body, #root {
+  height: 100%;
+  width: 100%;
+  background-color: var(--bg-canvas);
+  color: var(--ink-primary);
+  font-family: var(--font-sans);
+  font-size: 14px;
+  line-height: 1.5;
+  -webkit-font-smoothing: antialiased;
+  -moz-osx-font-smoothing: grayscale;
+}
+
+/* Typography Helpers */
+.font-sans {
+  font-family: var(--font-sans);
+}
+
+.font-mono {
+  font-family: var(--font-mono);
+}
+
+/* Standard flat borders, zero border-radius / max 2px */
+.border-subtle {
+  border: 1px solid var(--border-light);
+}
+
+.border-strong {
+  border: 1px solid var(--border-medium);
+}
+
+/* Scrollbar customization - Industrial thin */
+::-webkit-scrollbar {
+  width: 6px;
+  height: 6px;
+}
+::-webkit-scrollbar-track {
+  background: var(--bg-canvas);
+}
+::-webkit-scrollbar-thumb {
+  background: var(--border-medium);
+}
+::-webkit-scrollbar-thumb:hover {
+  background: var(--border-strong);
+}
+
+/* Input Styles */
+input, select, textarea {
+  font-family: inherit;
+  font-size: 13px;
+  color: var(--ink-primary);
+  background: var(--surface);
+  border: 1px solid var(--border-medium);
+  border-radius: 2px;
+  padding: 7px 10px;
+  outline: none;
+  transition: border-color 0.15s ease;
+}
+
+input:focus, select:focus, textarea:focus {
+  border-color: var(--border-focus);
+}
+
+input::placeholder, textarea::placeholder {
+  color: var(--ink-dim);
+}
+
+/* Utilitarian Button Base */
+button {
+  font-family: inherit;
+  font-size: 13px;
+  font-weight: 500;
+  cursor: pointer;
+  border-radius: 2px;
+  transition: all 0.15s ease;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  gap: 6px;
+}
+
+button:disabled {
+  opacity: 0.5;
+  cursor: not-allowed;
+}
+
+/* Primary Button (Industrial Amber) */
+.btn-primary {
+  background-color: var(--accent-amber);
+  color: #FFFFFF;
+  border: 1px solid var(--accent-amber);
+  padding: 7px 14px;
+}
+.btn-primary:hover:not(:disabled) {
+  background-color: var(--accent-amber-hover);
+  border-color: var(--accent-amber-hover);
+}
+
+/* Secondary Button (Bordered Neutral) */
+.btn-secondary {
+  background-color: var(--surface);
+  color: var(--ink-primary);
+  border: 1px solid var(--border-medium);
+  padding: 7px 14px;
+}
+.btn-secondary:hover:not(:disabled) {
+  background-color: var(--surface-subtle);
+  border-color: var(--border-strong);
+}
+
+/* Flat Destructive / Cancel Button */
+.btn-danger {
+  background-color: var(--surface);
+  color: var(--status-error-ink);
+  border: 1px solid var(--status-error-border);
+  padding: 7px 14px;
+}
+.btn-danger:hover:not(:disabled) {
+  background-color: var(--status-error-bg);
+}
+
+/* Monospace Metadata Badges */
+.meta-tag {
+  font-family: var(--font-mono);
+  font-size: 11px;
+  line-height: 1.4;
+  background-color: var(--tag-bg);
+  border: 1px solid var(--tag-border);
+  color: var(--tag-ink);
+  padding: 2px 6px;
+  border-radius: 2px;
+  display: inline-flex;
+  align-items: center;
+  white-space: nowrap;
+}
+
+.meta-tag-tool {
+  background-color: #F1F5F9;
+  border-color: #CBD5E1;
+  color: #1E293B;
+  font-weight: 500;
+}
+
+.meta-tag-ref {
+  background-color: #F0FDF4;
+  border-color: #BBF7D0;
+  color: #166534;
+  font-weight: 500;
+}
+
+.meta-tag-id {
+  font-family: var(--font-mono);
+  font-weight: 600;
+  letter-spacing: 0.5px;
+}
+
+/* Role Badges */
+.badge-role-admin {
+  font-family: var(--font-mono);
+  font-size: 11px;
+  font-weight: 600;
+  letter-spacing: 0.5px;
+  background-color: var(--accent-amber-subtle);
+  color: var(--accent-amber-hover);
+  border: 1px solid var(--accent-amber-border);
+  padding: 2px 7px;
+  border-radius: 2px;
+}
+
+.badge-role-employee {
+  font-family: var(--font-mono);
+  font-size: 11px;
+  font-weight: 600;
+  letter-spacing: 0.5px;
+  background-color: #F1F5F9;
+  color: #334155;
+  border: 1px solid #CBD5E1;
+  padding: 2px 7px;
+  border-radius: 2px;
+}
+
+.badge-probation {
+  font-family: var(--font-mono);
+  font-size: 11px;
+  font-weight: 600;
+  background-color: #FEF3C7;
+  color: #B45309;
+  border: 1px solid #FCD34D;
+  padding: 2px 6px;
+  border-radius: 2px;
+}
+
+.badge-active {
+  font-family: var(--font-mono);
+  font-size: 11px;
+  font-weight: 600;
+  background-color: #ECFDF5;
+  color: #047857;
+  border: 1px solid #A7F3D0;
+  padding: 2px 6px;
+  border-radius: 2px;
+}
