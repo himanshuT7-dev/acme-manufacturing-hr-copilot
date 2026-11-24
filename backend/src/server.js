@@ -69,10 +69,7 @@ export async function startServer(port = PORT) {
 }
 
 // Auto-start server when run directly
-const isMain = process.argv[1] && (
-  process.argv[1].endsWith('server.js') ||
-  process.argv[1].endsWith('index.js')
-);
+const isMain = process.argv[1] && process.argv[1].endsWith('server.js');
 
 if (isMain) {
   startServer(PORT).catch((err) => {
