@@ -15,7 +15,11 @@ if (process.env.DATABASE_URL) {
   if (process.cwd().endsWith('/backend') && rawUrl.startsWith('./backend/')) {
     rawUrl = '.' + rawUrl.slice('./backend'.length);
   }
-  const resolved = path.resolve(rawUrl);
+  let resolved = path.resolve(rawUrl);
+  const backendRelative = path.resolve(__dirname, '../../', rawUrl);
+  if (!fs.existsSync(resolved) && fs.existsSync(backendRelative)) {
+    resolved = backendRelative;
+  }
   const targetDir = path.dirname(resolved);
   if (!fs.existsSync(targetDir)) {
     fs.mkdirSync(targetDir, { recursive: true });

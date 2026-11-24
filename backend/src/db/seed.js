@@ -262,137 +262,50 @@ for (const lr of rawLeaveRequests) {
   );
 }
 
-// 4. Attendance Seeding (October 2026 Weekdays: Oct 1 - Oct 30)
+// 4. Attendance Seeding: EXACT 15 rows from assignment brief's attendance.csv
+// Strictly 5 rows for E001, 5 rows for E002, 5 rows for E004 (Oct 19–23, 2026).
+// ZERO synthetic or filler rows for E003 (Sneha), E005 (Fatima), or E006 (Vikram).
 const insertAttendance = db.prepare(`
   INSERT INTO attendance (employee_id, date, check_in, check_out, status, notes)
   VALUES (?, ?, ?, ?, ?, ?)
 `);
 
-const octWeekdays = [
-  '2026-10-01', '2026-10-02',
-  '2026-10-05', '2026-10-06', '2026-10-07', '2026-10-08', '2026-10-09',
-  '2026-10-12', '2026-10-13', '2026-10-14', '2026-10-15', '2026-10-16',
-  '2026-10-19', '2026-10-20', '2026-10-21', '2026-10-22', '2026-10-23',
-  '2026-10-26', '2026-10-27', '2026-10-28', '2026-10-29', '2026-10-30'
+const rawAttendanceRecords = [
+  // E001 - Priya Nair (Production, shift 09:00)
+  { employee_id: 'E001', date: '2026-10-19', check_in: '09:05:00', check_out: '18:00:00', status: 'present', notes: 'On time (within grace)' },
+  { employee_id: 'E001', date: '2026-10-20', check_in: '09:00:00', check_out: '18:00:00', status: 'present', notes: 'On time' },
+  { employee_id: 'E001', date: '2026-10-21', check_in: '09:10:00', check_out: '18:00:00', status: 'present', notes: 'On time (within grace)' },
+  { employee_id: 'E001', date: '2026-10-22', check_in: null, check_out: null, status: 'on_leave', notes: 'Pending casual leave application (LR001)' },
+  { employee_id: 'E001', date: '2026-10-23', check_in: '09:00:00', check_out: '18:00:00', status: 'present', notes: 'On time' },
+
+  // E002 - Rahul Mehta (Production, shift 09:00) - 3 late marks in October
+  { employee_id: 'E002', date: '2026-10-19', check_in: '09:40:00', check_out: '18:30:00', status: 'late', notes: '40 mins late' },
+  { employee_id: 'E002', date: '2026-10-20', check_in: '09:35:00', check_out: '18:00:00', status: 'late', notes: '35 mins late' },
+  { employee_id: 'E002', date: '2026-10-21', check_in: '09:16:00', check_out: '18:00:00', status: 'late', notes: '16 mins late - 3rd late mark' },
+  { employee_id: 'E002', date: '2026-10-22', check_in: '09:00:00', check_out: '18:00:00', status: 'present', notes: 'On time' },
+  { employee_id: 'E002', date: '2026-10-23', check_in: '09:02:00', check_out: '18:00:00', status: 'present', notes: 'On time (within 15m grace)' },
+
+  // E004 - Arjun Rao (Sales, shift 09:00) - Missed punch Oct 21 & Overtime Oct 22
+  { employee_id: 'E004', date: '2026-10-19', check_in: '09:00:00', check_out: '18:00:00', status: 'present', notes: 'On time' },
+  { employee_id: 'E004', date: '2026-10-20', check_in: '09:00:00', check_out: '18:00:00', status: 'present', notes: 'On time' },
+  { employee_id: 'E004', date: '2026-10-21', check_in: '09:00:00', check_out: null, status: 'present', notes: 'Missed check-out punch (requires regularisation within 3 days)' },
+  { employee_id: 'E004', date: '2026-10-22', check_in: '09:00:00', check_out: '19:30:00', status: 'present', notes: 'Overtime worked (10.5h total, 1h 30m overtime)' },
+  { employee_id: 'E004', date: '2026-10-23', check_in: '09:00:00', check_out: '18:00:00', status: 'present', notes: 'On time' }
 ];
 
-for (const date of octWeekdays) {
-  for (const emp of rawEmployees) {
-    const empId = emp.employee_id;
-    const shift = emp.shift_start;
-
-    // Leave coverage checks
-    if (empId === 'E001' && date === '2026-10-22') {
-      // Pending CL (LR001)
-      insertAttendance.run(empId, date, null, null, 'on_leave', 'Pending casual leave application (LR001)');
-      continue;
-    }
-    if (empId === 'E003' && (date === '2026-10-14' || date === '2026-10-15')) {
-      // Approved SL (LR002)
-      insertAttendance.run(empId, date, null, null, 'on_leave', 'Approved sick leave (LR002)');
-      continue;
-    }
-    if (empId === 'E004' && (date === '2026-10-05' || date === '2026-10-06' || date === '2026-10-07')) {
-      // Approved EL (LR003)
-      insertAttendance.run(empId, date, null, null, 'on_leave', 'Approved earned leave (LR003)');
-      continue;
-    }
-
-    // Specific brief events:
-    // 1. Rahul (E002, Production, shift 09:00): 3 late marks in October 2026
-    if (empId === 'E002') {
-      if (date === '2026-10-19') {
-        insertAttendance.run(empId, date, '09:40:00', '18:30:00', 'late', '40 mins late');
-        continue;
-      }
-      if (date === '2026-10-20') {
-        insertAttendance.run(empId, date, '09:35:00', '18:00:00', 'late', '35 mins late');
-        continue;
-      }
-      if (date === '2026-10-21') {
-        insertAttendance.run(empId, date, '09:16:00', '18:00:00', 'late', '16 mins late - 3rd late mark');
-        continue;
-      }
-      if (date === '2026-10-22') {
-        insertAttendance.run(empId, date, '09:00:00', '18:00:00', 'present', 'On time');
-        continue;
-      }
-      if (date === '2026-10-23') {
-        insertAttendance.run(empId, date, '09:02:00', '18:00:00', 'present', 'On time (within 15m grace)');
-        continue;
-      }
-    }
-
-    // 2. Priya (E001, Production, shift 09:00) exact timestamps for reference week
-    if (empId === 'E001') {
-      if (date === '2026-10-19') {
-        insertAttendance.run(empId, date, '09:05:00', '18:00:00', 'present', 'On time (within grace)');
-        continue;
-      }
-      if (date === '2026-10-20') {
-        insertAttendance.run(empId, date, '09:00:00', '18:00:00', 'present', 'On time');
-        continue;
-      }
-      if (date === '2026-10-21') {
-        insertAttendance.run(empId, date, '09:10:00', '18:00:00', 'present', 'On time (within grace)');
-        continue;
-      }
-      if (date === '2026-10-23') {
-        insertAttendance.run(empId, date, '09:00:00', '18:00:00', 'present', 'On time');
-        continue;
-      }
-    }
-
-    // 3. Arjun (E004, Sales, shift 09:00):
-    // Oct 21: Missed punch (check-in 09:00, no check-out)
-    // Oct 22: Overtime (09:00 to 19:30 = 10.5h, which is 1h 30m overtime > 9h)
-    if (empId === 'E004') {
-      if (date === '2026-10-19') {
-        insertAttendance.run(empId, date, '09:00:00', '18:00:00', 'present', 'On time');
-        continue;
-      }
-      if (date === '2026-10-20') {
-        insertAttendance.run(empId, date, '09:00:00', '18:00:00', 'present', 'On time');
-        continue;
-      }
-      if (date === '2026-10-21') {
-        insertAttendance.run(empId, date, '09:00:00', null, 'present', 'Missed check-out punch (requires regularisation within 3 days)');
-        continue;
-      }
-      if (date === '2026-10-22') {
-        insertAttendance.run(empId, date, '09:00:00', '19:30:00', 'present', 'Overtime worked (10.5h total, 1h 30m overtime)');
-        continue;
-      }
-      if (date === '2026-10-23') {
-        insertAttendance.run(empId, date, '09:00:00', '18:00:00', 'present', 'On time');
-        continue;
-      }
-    }
-
-    // Standard present day based on assigned shift_start
-    let checkIn = '09:01:00';
-    let checkOut = '17:31:00';
-
-    if (shift === '08:00') {
-      checkIn = '08:02:00';
-      checkOut = '16:35:00';
-    } else if (shift === '09:00') {
-      checkIn = '09:02:00';
-      checkOut = '17:35:00';
-    } else if (shift === '09:30') {
-      checkIn = '09:32:00';
-      checkOut = '18:05:00';
-    } else if (shift === '10:00') {
-      checkIn = '10:02:00';
-      checkOut = '18:35:00';
-    }
-
-    insertAttendance.run(empId, date, checkIn, checkOut, 'present', null);
-  }
+for (const att of rawAttendanceRecords) {
+  insertAttendance.run(
+    att.employee_id,
+    att.date,
+    att.check_in,
+    att.check_out,
+    att.status,
+    att.notes
+  );
 }
 
 console.log('Seed completed successfully:');
 console.log(`- 6 employees seeded with exact brief CSV profiles`);
 console.log(`- Exact leave balances (CL, SL, EL) initialized`);
 console.log(`- 3 leave requests seeded (LR001 pending CL E001, LR002 approved SL E003, LR003 approved EL E004)`);
-console.log(`- Exact attendance scenarios seeded (Rahul 3 late marks, Arjun missed punch & 1h30m overtime)`);
+console.log(`- Exactly 15 attendance rows seeded (5 for E001, 5 for E002, 5 for E004; 0 for E003/E005/E006)`);

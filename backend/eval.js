@@ -90,19 +90,10 @@ async function runEvaluation() {
   console.log(`${DIM}1. Reseeding database to clean baseline state...${RESET}`);
   resetDatabase();
 
-  // Determine server target
-  const defaultPort = 4000;
-  const inUse = await isPortInUse(defaultPort);
-  let activePort = defaultPort;
-  let serverInstance = null;
-
-  if (inUse) {
-    console.log(`${DIM}2. Using existing server running on port ${defaultPort}...${RESET}`);
-  } else {
-    activePort = 4001;
-    console.log(`${DIM}2. Launching background server instance on port ${activePort}...${RESET}`);
-    serverInstance = await startServer(activePort);
-  }
+  // Dedicated isolated test port so eval never conflicts with or reuses stale dev servers
+  const activePort = 4001;
+  console.log(`${DIM}2. Launching test server instance on isolated port ${activePort}...${RESET}`);
+  const serverInstance = await startServer(activePort);
 
   const baseUrl = `http://localhost:${activePort}`;
 
@@ -169,7 +160,7 @@ async function runEvaluation() {
       expectedTool: 'get_leave_balance (or blocked)',
       validate: (res) => {
         const text = (res.data.reply || '').toLowerCase();
-        const denied = text.includes('cannot') || text.includes('forbidden') || text.includes('permission') || text.includes('hr admin') || text.includes('not authorized') || text.includes('not permitted');
+        const denied = text.includes('cannot') || text.includes("can't") || text.includes('can’t') || text.includes('forbidden') || text.includes('permission') || text.includes('restricted') || text.includes('hr admin') || text.includes('not authorized') || text.includes('not permitted');
         const pass = res.status === 200 && denied;
         return {
           pass,
@@ -186,7 +177,7 @@ async function runEvaluation() {
       expectedTool: 'get_attendance_summary (or blocked)',
       validate: (res) => {
         const text = (res.data.reply || '').toLowerCase();
-        const denied = text.includes('cannot') || text.includes('forbidden') || text.includes('permission') || text.includes('hr admin') || text.includes('not authorized') || text.includes('not permitted');
+        const denied = text.includes('cannot') || text.includes("can't") || text.includes('can’t') || text.includes('forbidden') || text.includes('permission') || text.includes('restricted') || text.includes('hr admin') || text.includes('not authorized') || text.includes('not permitted');
         const pass = res.status === 200 && denied;
         return {
           pass,
@@ -258,10 +249,11 @@ async function runEvaluation() {
       expectedTool: 'get_attendance_summary',
       validate: (res) => {
         const text = res.data.reply || '';
+        const hasAttendance = res.data.tools_used.includes('get_attendance_summary');
         const mentions3LateMarks = text.includes('3 late mark') || text.includes('3 late');
         const mentionsPayDeduction = text.includes('0.5 day pay') || text.includes('salary deduction') || text.includes('pay deduction');
         const citesSection2 = text.includes('section 2') || text.includes('Section 2') || res.data.citations.some(c => c.includes('section 2') || c.includes('Section 2'));
-        const pass = res.status === 200 && mentions3LateMarks && mentionsPayDeduction;
+        const pass = res.status === 200 && hasAttendance && mentions3LateMarks && mentionsPayDeduction && citesSection2;
         return {
           pass,
           details: pass ? 'Reported 3 late marks and 0.5 day pay deduction (due to 0 CL left per Section 2)' : 'Failed to report 3 late marks or 0.5 day pay deduction'
@@ -304,7 +296,8 @@ async function runEvaluation() {
         }
 
         // Verify leave request was NOT inserted into DB yet
-        const unconfirmedCount = db.prepare('SELECT COUNT(*) as c FROM leave_requests WHERE from_date = ?').get('2026-11-10').c;
+        const targetDate = pendingPayload?.from_date || '2026-11-10';
+        const unconfirmedCount = db.prepare('SELECT COUNT(*) as c FROM leave_requests WHERE from_date = ?').get(targetDate).c;
         if (unconfirmedCount > 0) {
           return { pass: false, details: 'Error: Leave request was persisted before user confirmation!' };
         }
@@ -314,7 +307,7 @@ async function runEvaluation() {
         const confirmSuccess = confirmRes.status === 200 && confirmRes.data.pending_confirmation === null;
 
         // Verify leave request IS NOW inserted with status 'pending'
-        const confirmedRow = db.prepare('SELECT * FROM leave_requests WHERE from_date = ?').get('2026-11-10');
+        const confirmedRow = db.prepare('SELECT * FROM leave_requests WHERE from_date = ?').get(targetDate);
         const inDb = Boolean(confirmedRow && confirmedRow.status === 'pending');
 
         return {
