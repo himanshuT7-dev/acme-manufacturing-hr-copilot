@@ -46,5 +46,5 @@ export default function App() {
     return <Login onLoginSuccess={handleLoginSuccess} />;
   }
 
-  return <Workspace user={user} token={token} onSignOut={handleSignOut} />;
+  return <Workspace user={user} token={token} onSignOut={handleSignOut} onSwitchUser={handleLoginSuccess} />;
 }

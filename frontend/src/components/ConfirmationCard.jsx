@@ -71,7 +71,7 @@ export default function ConfirmationCard({
         backgroundColor: '#FFFFFF',
         border: '1px solid var(--border-medium)',
         borderLeft: '4px solid var(--accent-amber)',
-        borderRadius: '2px',
+        borderRadius: '6px',
         overflow: 'hidden'
       }}
     >

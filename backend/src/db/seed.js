@@ -300,34 +300,71 @@ for (const date of octWeekdays) {
 
     // Specific brief events:
     // 1. Rahul (E002, Production, shift 09:00): 3 late marks in October 2026
-    // Late Mark 1: Oct 06 (09:25:00)
-    // Late Mark 2: Oct 13 (09:20:00)
-    // Late Mark 3: Oct 19 (09:30:00) -> 3rd late mark in month triggers deduction rule
     if (empId === 'E002') {
-      if (date === '2026-10-06') {
-        insertAttendance.run(empId, date, '09:25:00', '17:35:00', 'late', 'Late mark 1 (+25m past 09:00)');
-        continue;
-      }
-      if (date === '2026-10-13') {
-        insertAttendance.run(empId, date, '09:20:00', '17:30:00', 'late', 'Late mark 2 (+20m past 09:00)');
-        continue;
-      }
       if (date === '2026-10-19') {
-        insertAttendance.run(empId, date, '09:30:00', '17:35:00', 'late', 'Late mark 3 (+30m past 09:00 - 3rd late mark in Oct)');
+        insertAttendance.run(empId, date, '09:40:00', '18:30:00', 'late', '40 mins late');
+        continue;
+      }
+      if (date === '2026-10-20') {
+        insertAttendance.run(empId, date, '09:35:00', '18:00:00', 'late', '35 mins late');
+        continue;
+      }
+      if (date === '2026-10-21') {
+        insertAttendance.run(empId, date, '09:16:00', '18:00:00', 'late', '16 mins late - 3rd late mark');
+        continue;
+      }
+      if (date === '2026-10-22') {
+        insertAttendance.run(empId, date, '09:00:00', '18:00:00', 'present', 'On time');
+        continue;
+      }
+      if (date === '2026-10-23') {
+        insertAttendance.run(empId, date, '09:02:00', '18:00:00', 'present', 'On time (within 15m grace)');
         continue;
       }
     }
 
-    // 2. Arjun (E004, Sales, shift 09:00):
+    // 2. Priya (E001, Production, shift 09:00) exact timestamps for reference week
+    if (empId === 'E001') {
+      if (date === '2026-10-19') {
+        insertAttendance.run(empId, date, '09:05:00', '18:00:00', 'present', 'On time (within grace)');
+        continue;
+      }
+      if (date === '2026-10-20') {
+        insertAttendance.run(empId, date, '09:00:00', '18:00:00', 'present', 'On time');
+        continue;
+      }
+      if (date === '2026-10-21') {
+        insertAttendance.run(empId, date, '09:10:00', '18:00:00', 'present', 'On time (within grace)');
+        continue;
+      }
+      if (date === '2026-10-23') {
+        insertAttendance.run(empId, date, '09:00:00', '18:00:00', 'present', 'On time');
+        continue;
+      }
+    }
+
+    // 3. Arjun (E004, Sales, shift 09:00):
     // Oct 21: Missed punch (check-in 09:00, no check-out)
     // Oct 22: Overtime (09:00 to 19:30 = 10.5h, which is 1h 30m overtime > 9h)
     if (empId === 'E004') {
+      if (date === '2026-10-19') {
+        insertAttendance.run(empId, date, '09:00:00', '18:00:00', 'present', 'On time');
+        continue;
+      }
+      if (date === '2026-10-20') {
+        insertAttendance.run(empId, date, '09:00:00', '18:00:00', 'present', 'On time');
+        continue;
+      }
       if (date === '2026-10-21') {
         insertAttendance.run(empId, date, '09:00:00', null, 'present', 'Missed check-out punch (requires regularisation within 3 days)');
         continue;
       }
       if (date === '2026-10-22') {
         insertAttendance.run(empId, date, '09:00:00', '19:30:00', 'present', 'Overtime worked (10.5h total, 1h 30m overtime)');
+        continue;
+      }
+      if (date === '2026-10-23') {
+        insertAttendance.run(empId, date, '09:00:00', '18:00:00', 'present', 'On time');
         continue;
       }
     }

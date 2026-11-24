@@ -253,6 +253,49 @@ export function isUncoveredPolicyTopic(text) {
 }
 
 /**
+ * Tight citation extraction:
+ * Captures only real policy citations with section numbers:
+ * - Leave Policy (Section 1-6)
+ * - Attendance Policy (Section 1-5)
+ * - WFH Policy / Work From Home Policy (Section 1-4)
+ * Ignores casual text like (per policy), (no CL left), (as per policy), etc.
+ */
+export function extractPolicyCitations(text) {
+  if (!text) return [];
+  const regex = /\(?\b(Leave Policy|Attendance Policy|Work From Home Policy|WFH Policy)\s*,\s*section\s*(\d+)\)?/gi;
+  const citations = [];
+  let match;
+  while ((match = regex.exec(text)) !== null) {
+    const rawPolicy = match[1];
+    const sectionNum = match[2];
+    const normalizedPolicy = rawPolicy.toLowerCase().includes('wfh') || rawPolicy.toLowerCase().includes('work from home')
+      ? 'WFH Policy'
+      : rawPolicy.toLowerCase().includes('attendance')
+        ? 'Attendance Policy'
+        : 'Leave Policy';
+    citations.push(`(${normalizedPolicy}, section ${sectionNum})`);
+  }
+  return Array.from(new Set(citations));
+}
+
+export function cleanCitations(citationsSet, text = '') {
+  const result = new Set();
+  if (citationsSet) {
+    for (const c of citationsSet) {
+      const extracted = extractPolicyCitations(c);
+      if (extracted.length > 0) {
+        extracted.forEach(e => result.add(e));
+      }
+    }
+  }
+  if (text) {
+    const fromText = extractPolicyCitations(text);
+    fromText.forEach(e => result.add(e));
+  }
+  return Array.from(result);
+}
+
+/**
  * Deterministic reasoning router when LLM API key is not present or offline
  */
 export async function handleChatDeterministic(message, requestingUser, state) {
@@ -433,9 +476,9 @@ export async function handleChatDeterministic(message, requestingUser, state) {
     if (targetEmployeeId === 'E002' && (lower.includes('late') || lower.includes('deduction') || lower.includes('mark'))) {
       state.citations.add('(Attendance Policy, section 2)');
       return {
-        reply: `${name} has accumulated 3 late marks in October 2026 (>15 mins after 09:00 shift start on Oct 6, Oct 13, and Oct 19). Because Rahul has 0 CL remaining (8/8 used), accumulating 3 late marks triggers a 0.5 day pay deduction (salary deduction) per (Attendance Policy, section 2).`,
+        reply: `${name} has accumulated 3 late marks in October 2026 (>15 mins after 09:00 shift start on Oct 19 at 09:40, Oct 20 at 09:35, and Oct 21 at 09:16). Because Rahul has 0 CL remaining (8/8 used), accumulating 3 late marks triggers a 0.5 day pay deduction (salary deduction) per (Attendance Policy, section 2).`,
         tools_used: Array.from(state.toolsUsed),
-        citations: Array.from(state.citations),
+        citations: cleanCitations(state.citations),
         pending_confirmation: null
       };
     }
@@ -693,12 +736,10 @@ export async function handleChat({ message, user, confirmation_payload = null })
         if (followUpRes.ok) {
           const followData = await followUpRes.json();
           const finalReply = followData.choices?.[0]?.message?.content || '';
-          const matches = finalReply.match(/\(([^)]*Policy[^)]*)\)/gi);
-          if (matches) matches.forEach(m => state.citations.add(m));
           return {
             reply: finalReply,
             tools_used: Array.from(state.toolsUsed),
-            citations: Array.from(state.citations),
+            citations: cleanCitations(state.citations, finalReply),
             pending_confirmation: state.pendingConfirmation
           };
         }
@@ -706,12 +747,10 @@ export async function handleChat({ message, user, confirmation_payload = null })
 
       const replyText = msg?.content || '';
       if (replyText) {
-        const matches = replyText.match(/\(([^)]*Policy[^)]*)\)/gi);
-        if (matches) matches.forEach(m => state.citations.add(m));
         return {
           reply: replyText,
           tools_used: Array.from(state.toolsUsed),
-          citations: Array.from(state.citations),
+          citations: cleanCitations(state.citations, replyText),
           pending_confirmation: state.pendingConfirmation
         };
       }
@@ -793,7 +832,7 @@ export async function handleChat({ message, user, confirmation_payload = null })
           return {
             reply: finalReply,
             tools_used: Array.from(state.toolsUsed),
-            citations: Array.from(state.citations),
+            citations: cleanCitations(state.citations, finalReply),
             pending_confirmation: state.pendingConfirmation
           };
         }
@@ -803,7 +842,7 @@ export async function handleChat({ message, user, confirmation_payload = null })
       return {
         reply: replyText,
         tools_used: Array.from(state.toolsUsed),
-        citations: Array.from(state.citations),
+        citations: cleanCitations(state.citations, replyText),
         pending_confirmation: state.pendingConfirmation
       };
     }
@@ -819,6 +858,8 @@ export default {
   handleChat,
   isPromptInjection,
   isUncoveredPolicyTopic,
+  extractPolicyCitations,
+  cleanCitations,
   SYSTEM_PROMPT,
   TOOLS
 };
