@@ -582,9 +582,130 @@ export async function handleChat({ message, user, confirmation_payload = null })
   // Try Remote LLM calling with tool declarations
   try {
     const apiKey = process.env.LLM_API_KEY;
-    const provider = process.env.LLM_PROVIDER || 'gemini';
+    let provider = process.env.LLM_PROVIDER || 'gemini';
+    if (apiKey && apiKey.startsWith('gsk_')) {
+      provider = 'groq';
+    }
 
-    if (provider === 'gemini') {
+    if (provider === 'groq') {
+      const groqTools = TOOLS.map(t => ({
+        type: 'function',
+        function: {
+          name: t.name,
+          description: t.description,
+          parameters: {
+            type: 'object',
+            properties: Object.fromEntries(
+              Object.entries(t.parameters.properties || {}).map(([k, v]) => [
+                k,
+                { type: v.type ? v.type.toLowerCase() : 'string', description: v.description }
+              ])
+            ),
+            required: t.parameters.required || []
+          }
+        }
+      }));
+
+      const messages = [
+        {
+          role: 'system',
+          content: `${SYSTEM_PROMPT}\n\nUser Profile: Employee ID: ${user.employee_id}, Role: ${user.role}, Name: ${user.name}, Department: ${user.department}, Probation: ${user.on_probation}`
+        },
+        {
+          role: 'user',
+          content: message
+        }
+      ];
+
+      const res = await fetch('https://api.groq.com/openai/v1/chat/completions', {
+        method: 'POST',
+        headers: {
+          'Content-Type': 'application/json',
+          'Authorization': `Bearer ${apiKey}`
+        },
+        body: JSON.stringify({
+          model: process.env.GROQ_MODEL || 'openai/gpt-oss-120b',
+          messages,
+          tools: groqTools,
+          temperature: 0.2
+        })
+      });
+
+      if (!res.ok) {
+        console.warn(`[copilot] Remote Groq API status ${res.status}. Falling back to deterministic router.`);
+        return await handleChatDeterministic(message, user, state);
+      }
+
+      const data = await res.json();
+      const choice = data.choices?.[0];
+      const msg = choice?.message;
+
+      if (msg?.tool_calls && msg.tool_calls.length > 0) {
+        for (const tc of msg.tool_calls) {
+          const fnName = tc.function.name;
+          let fnArgs = {};
+          try {
+            fnArgs = JSON.parse(tc.function.arguments);
+          } catch (e) {}
+
+          const toolResult = await executeTool(fnName, fnArgs, user, state);
+
+          if (fnName === 'apply_leave' && toolResult.pending_confirmation) {
+            return {
+              reply: `You requested ${toolResult.days_count} day(s) of ${fnArgs.leave_type || 'leave'} from ${fnArgs.from_date} to ${fnArgs.to_date}. Would you like me to submit this request for you?`,
+              tools_used: Array.from(state.toolsUsed),
+              citations: Array.from(state.citations),
+              pending_confirmation: toolResult.pending_confirmation
+            };
+          }
+
+          messages.push(msg);
+          messages.push({
+            role: 'tool',
+            tool_call_id: tc.id,
+            content: JSON.stringify(toolResult)
+          });
+        }
+
+        const followUpRes = await fetch('https://api.groq.com/openai/v1/chat/completions', {
+          method: 'POST',
+          headers: {
+            'Content-Type': 'application/json',
+            'Authorization': `Bearer ${apiKey}`
+          },
+          body: JSON.stringify({
+            model: process.env.GROQ_MODEL || 'openai/gpt-oss-120b',
+            messages,
+            temperature: 0.2
+          })
+        });
+
+        if (followUpRes.ok) {
+          const followData = await followUpRes.json();
+          const finalReply = followData.choices?.[0]?.message?.content || '';
+          const matches = finalReply.match(/\(([^)]*Policy[^)]*)\)/gi);
+          if (matches) matches.forEach(m => state.citations.add(m));
+          return {
+            reply: finalReply,
+            tools_used: Array.from(state.toolsUsed),
+            citations: Array.from(state.citations),
+            pending_confirmation: state.pendingConfirmation
+          };
+        }
+      }
+
+      const replyText = msg?.content || '';
+      if (replyText) {
+        const matches = replyText.match(/\(([^)]*Policy[^)]*)\)/gi);
+        if (matches) matches.forEach(m => state.citations.add(m));
+        return {
+          reply: replyText,
+          tools_used: Array.from(state.toolsUsed),
+          citations: Array.from(state.citations),
+          pending_confirmation: state.pendingConfirmation
+        };
+      }
+    } else if (provider === 'gemini') {
       const url = `https://generativelanguage.googleapis.com/v1beta/models/gemini-1.5-flash:generateContent?key=${apiKey}`;
 
       const functionDeclarations = TOOLS.map(t => ({

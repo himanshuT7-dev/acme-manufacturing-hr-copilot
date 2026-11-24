@@ -187,7 +187,7 @@ async function generateRemoteEmbedding(text) {
   const provider = process.env.LLM_PROVIDER || 'gemini';
   const apiKey = process.env.LLM_API_KEY;
 
-  if (!apiKey) return null;
+  if (!apiKey || provider === 'groq' || apiKey.startsWith('gsk_')) return null;
 
   try {
     if (provider === 'gemini') {

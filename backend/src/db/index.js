@@ -9,9 +9,19 @@ if (!fs.existsSync(dataDir)) {
   fs.mkdirSync(dataDir, { recursive: true });
 }
 
-const dbPath = process.env.DATABASE_URL
-  ? path.resolve(process.env.DATABASE_URL)
-  : path.join(dataDir, 'hrms.sqlite');
+let dbPath = path.join(dataDir, 'hrms.sqlite');
+if (process.env.DATABASE_URL) {
+  let rawUrl = process.env.DATABASE_URL;
+  if (process.cwd().endsWith('/backend') && rawUrl.startsWith('./backend/')) {
+    rawUrl = '.' + rawUrl.slice('./backend'.length);
+  }
+  const resolved = path.resolve(rawUrl);
+  const targetDir = path.dirname(resolved);
+  if (!fs.existsSync(targetDir)) {
+    fs.mkdirSync(targetDir, { recursive: true });
+  }
+  dbPath = resolved;
+}
 
 const db = new Database(dbPath);
 db.pragma('journal_mode = WAL');
