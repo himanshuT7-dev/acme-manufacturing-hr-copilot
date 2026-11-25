@@ -665,6 +665,21 @@ export async function handleChat({ message, user, confirmation_payload = null })
     };
   }
 
+  // 2. Uncovered Policy Topic Guardrail
+  if (isUncoveredPolicyTopic(message)) {
+    state.toolsUsed.add('search_policy');
+    const searchRes = await searchPolicy(message, 3);
+    for (const r of searchRes) {
+      if (r.citation) state.citations.add(r.citation);
+    }
+    return {
+      reply: 'Maternity leave is not covered in the current company policies (Leave Policy, Attendance Policy, and WFH Policy). Therefore, there is no documented policy to reference for this topic.\n\nPlease contact HR for further information or queries (hr@acme.com).',
+      tools_used: Array.from(state.toolsUsed),
+      citations: Array.from(state.citations),
+      pending_confirmation: null
+    };
+  }
+
   // If no LLM API key is provided, use deterministic router
   if (!process.env.LLM_API_KEY) {
     return await handleChatDeterministic(message, user, state);
